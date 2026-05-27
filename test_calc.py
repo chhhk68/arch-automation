@@ -31,3 +31,26 @@ def test_estimate_cost_invalid():
         estimate_cost(0, 1_000_000)
     with pytest.raises(ValueError):
         estimate_cost(100, -1)
+
+
+from calc import floor_area_ratio, building_coverage_ratio
+
+
+def test_floor_area_ratio():
+    assert floor_area_ratio(660, 330) == 200.0
+
+
+def test_floor_area_ratio_invalid():
+    with pytest.raises(ValueError):
+        floor_area_ratio(100, 0)
+    with pytest.raises(ValueError):
+        floor_area_ratio(-1, 100)
+
+
+def test_building_coverage_ratio():
+    assert building_coverage_ratio(165, 330) == 50.0
+
+
+def test_building_coverage_ratio_invalid():
+    with pytest.raises(ValueError):
+        building_coverage_ratio(100, 0)
