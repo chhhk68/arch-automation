@@ -1,0 +1,41 @@
+# ── 민감정보: 실제 API 키 (절대 커밋 금지) ──
+config.json
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── 로그 ──
+*.log
+flask_log*.txt
+server.log
+
+# ── 생성/출력물 ──
+output/
+*.obj
+*.ifc
+*.dxf
+
+# ── 테스트/디버그 임시 산출물 ──
+test_body.json
+test_parcel.json
+test_tile_*.png
+wfs_test.xml
+seoul_terrain.bin
+
+# ── 백업 폴더 (로컬 보관용, 원격 제외) ──
+SD ver1/
+pre-design_v1/
+
+# ── Claude Code 로컬 설정 ──
+.claude/settings.local.json
+
+# ── OS/에디터 ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

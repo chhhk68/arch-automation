@@ -1,0 +1,5 @@
+flask
+numpy
+matplotlib
+plotly
+requests
