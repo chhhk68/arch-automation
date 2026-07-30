@@ -7,7 +7,10 @@
 
 import sys
 from pathlib import Path
-from mass import Site, plot_mass, export_obj, export_ifc
+from mass import (Site, plot_mass, export_obj, export_ifc,
+                  calc_parking, default_use_type_for_zone,
+                  format_schedule, schedule_to_csv,
+                  FeasibilityInput, analyze_feasibility, format_feasibility)
 from mass.regulations import ZONING
 
 ZONES = list(ZONING.keys())
@@ -99,11 +102,45 @@ def run():
 
     print("\n" + result.summary())
 
+    # ── 면적 산정표 ──────────────────────────────────────────────
+    use_type = default_use_type_for_zone(zone)
+    schedule = result.area_schedule(use_type)
+    print("\n" + format_schedule(schedule))
+
+    # ── 주차대수 산정 ────────────────────────────────────────────
+    gfa = schedule["gross_floor_area"]
+    parking = calc_parking(gfa, use_type)
+    print(f"\n━━━ 주차대수 산정 ━━━")
+    print(f"  주용도     : {parking['use_type']}  ({parking['standard']})")
+    print(f"  법정 주차  : {parking['required']}대"
+          f"  (장애인 {parking['disabled']}대 포함 권장)")
+    print(f"  소요면적   : 약 {parking['est_area']:.0f} m²"
+          f"  (대당 {parking['unit_area']:.0f}m² · 지하주차 계획 개략)")
+
     out = Path("output"); out.mkdir(exist_ok=True)
+    csv_path = out / "area_schedule.csv"
+    csv_path.write_text(schedule_to_csv(schedule), encoding="utf-8-sig")
     obj_path = export_obj(footprints, str(out / "mass.obj"))
     ifc_path = export_ifc(footprints, zone, str(out / "mass.ifc"))
-    print(f"\n  OBJ (SketchUp / Rhino) → {obj_path}")
+    print(f"\n  면적산정표 CSV         → {csv_path}")
+    print(f"  OBJ (SketchUp / Rhino) → {obj_path}")
     print(f"  IFC (Revit)            → {ifc_path}")
+
+    # ── 사업성(수지) 분석 (선택) ─────────────────────────────────
+    if input("\n  사업성(수지) 분석을 진행할까요? [y/N]: ").strip().lower() == "y":
+        try:
+            land = float(input("    토지 단가 (만원/m²) [1500]: ").strip() or 1500) * 10_000
+            cons = float(input("    공사비 단가 (만원/m²) [250]: ").strip() or 250) * 10_000
+            sale = float(input("    분양 단가 (만원/m²) [700]: ").strip() or 700) * 10_000
+            fi = FeasibilityInput(
+                gfa=gfa, land_area=site.area,
+                land_price_per_sqm=land,
+                construction_cost_per_sqm=cons,
+                sale_price_per_sqm=sale,
+            )
+            print("\n" + format_feasibility(analyze_feasibility(fi)))
+        except (ValueError, KeyboardInterrupt) as e:
+            print(f"    수지분석 생략: {e}")
 
     print("\n  브라우저에서 3D 뷰가 열립니다...")
     print("  마우스 조작: 왼쪽 드래그=궤도회전 / 오른쪽 드래그=이동 / 스크롤=확대축소")

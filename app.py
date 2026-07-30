@@ -8,6 +8,8 @@ from mass.parcel import lookup
 from mass.exporter import export_obj, export_ifc
 from mass.zone_use import (get_zone_uses, calc_parking, calc_landscape,
                             calc_public_space, default_use_type_for_zone)
+from mass.schedule import build_area_schedule, schedule_to_csv
+from mass.feasibility import FeasibilityInput, analyze_feasibility
 from mass.plan import plan_to_dxf
 
 app = Flask(__name__)
@@ -1022,6 +1024,8 @@ def api_check():
         landscape = calc_landscape(site.area, zone, actual_total)
         pub_space = calc_public_space(site.area, actual_total, zone)
         zone_uses = get_zone_uses(zone)
+        schedule  = build_area_schedule(fps, site_area=site.area,
+                                        floor_height=FLOOR_HEIGHT, use_type=use_type)
 
         resp = {
             "site_area": actual_area if actual_area else site.area, "zone": zone,
@@ -1052,6 +1056,7 @@ def api_check():
             "pub_space": pub_space,
             "zone_uses": zone_uses,
             "use_type":  use_type,
+            "schedule":  schedule,
         }
         _state.update(resp)
         return jsonify(resp)
@@ -1087,6 +1092,47 @@ def api_export(fmt):
     if not p.exists():
         return jsonify({"error": "먼저 법규 검토를 실행하세요"}), 404
     return send_file(str(p.resolve()), as_attachment=True, download_name=f"mass.{fmt}")
+
+
+@app.route("/api/schedule.csv")
+def api_schedule_csv():
+    """직전 법규 검토(_state)의 면적 산정표를 CSV로 다운로드."""
+    fps = [(f["x0"], f["y0"], f["w"], f["d"]) for f in _state.get("footprints", [])]
+    if not fps:
+        return jsonify({"error": "먼저 법규 검토를 실행하세요"}), 404
+    schedule = build_area_schedule(fps, site_area=_state.get("site_area"),
+                                   floor_height=FLOOR_HEIGHT,
+                                   use_type=_state.get("use_type", ""))
+    # UTF-8 BOM 부착 — 엑셀 한글 깨짐 방지
+    body = "\ufeff" + schedule_to_csv(schedule)
+    resp = make_response(body)
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = "attachment; filename=area_schedule.csv"
+    return resp
+
+
+@app.route("/api/feasibility", methods=["POST"])
+def api_feasibility():
+    """사업성(수지) 분석. 연면적·대지면적 미입력 시 직전 검토(_state) 값 사용."""
+    data = request.get_json(silent=True) or {}
+    try:
+        gfa = float(data.get("gfa") or _state.get("actual_total_area") or 0)
+        land_area = float(data.get("land_area") or _state.get("site_area") or 0)
+        inp = FeasibilityInput(
+            gfa=gfa,
+            land_area=land_area,
+            land_price_per_sqm=float(data.get("land_price_per_sqm", 0)),
+            construction_cost_per_sqm=float(data.get("construction_cost_per_sqm", 0)),
+            sale_price_per_sqm=float(data.get("sale_price_per_sqm", 0)),
+            construction_area=float(data.get("construction_area", 0) or 0),
+            saleable_area=float(data.get("saleable_area", 0) or 0),
+            overhead_ratio=float(data.get("overhead_ratio", 0.25)),
+            sale_rate=float(data.get("sale_rate", 1.0)),
+            land_cost=float(data.get("land_cost", 0) or 0),
+        )
+        return jsonify(analyze_feasibility(inp))
+    except (ValueError, KeyError) as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/api/cadastral")

@@ -90,6 +90,15 @@ PUBLIC_SPACE_ZONES = {"중심상업지역", "일반상업지역", "근린상업�
 PUBLIC_SPACE_MIN_GFA = 5000  # 연면적 5,000m² 이상
 PUBLIC_SPACE_RATIO = 0.05    # 대지면적의 5% 이상 (최대 10%)
 
+# ── 주차 1대당 소요면적 (m²) ──────────────────────────────────────────
+# 주차장법 시행규칙 §3: 일반형 주차구획 2.5×5.0=12.5m². 차로·경사로·기둥 등
+# 부대면적을 포함한 실무 개략치는 대당 30~40m². 지하주차장 계획면적 추정에 사용.
+PARKING_UNIT_AREA = 32.0
+
+# ── 장애인전용 주차구획 설치 비율 (장애인·노인·임산부등편의증진법 시행령 별표2) ──
+# 부설주차장 주차대수의 2~4% (지자체 조례). 보수적으로 상한 4% 적용, 최소 1대.
+DISABLED_PARKING_RATIO = 0.04
+
 
 def get_zone_uses(zone: str) -> dict:
     return ZONE_USES.get(zone, {"recommended": [], "possible": [], "note": "데이터 없음"})
@@ -123,8 +132,18 @@ def calc_parking(gfa: float, use_type: str = "업무시설") -> dict:
         required = max(1, math.ceil(gfa * std["per_m2"]))
         label = std["label"]
 
+    # 장애인전용 주차구획: 부설주차 대수의 4%, 필요시 최소 1대 (편의증진법 시행령 별표2)
+    #   ※ 단독·공동주택 등 일부 용도는 설치 제외 — 개략 산정이므로 상업·업무 기준 표시
+    disabled = (max(1, round(required * DISABLED_PARKING_RATIO))
+                if required > 0 and use_type not in ("단독주택", "공동주택") else 0)
+    # 지하주차장 등 계획면적 개략 추정 (대당 32m² — 차로·경사로 포함)
+    est_area = round(required * PARKING_UNIT_AREA, 1)
+
     return {
         "required": required,
+        "disabled": disabled,
+        "est_area": est_area,
+        "unit_area": PARKING_UNIT_AREA,
         "standard": label,
         "use_type": use_type,
         "gfa": round(gfa, 1),

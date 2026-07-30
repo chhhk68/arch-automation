@@ -139,6 +139,17 @@ class RegulationResult:
 
         return footprints
 
+    def area_schedule(self, use_type: str = "") -> dict:
+        """이 검토 결과의 층별 풋프린트로 면적 산정표를 생성한다.
+
+        건폐율·용적률(%)은 대지면적(site.area) 기준으로 함께 계산된다.
+        """
+        from .schedule import build_area_schedule
+        return build_area_schedule(self.floor_footprints(),
+                                   site_area=self.site.area,
+                                   floor_height=FLOOR_HEIGHT,
+                                   use_type=use_type)
+
     def summary(self) -> str:
         s = self.site
         regs = s.regs
