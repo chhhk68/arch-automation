@@ -1,5 +1,10 @@
+# 웹앱(app.py) 구동에 필요한 최소 의존성 — Codespaces 빌드 경량화
 flask
-numpy
-matplotlib
-plotly
 requests
+
+# ── 선택(웹앱 실행에는 불필요) ──
+# 아래는 CLI 시각화(main.py)·테스트(test_full.py)·mass/visualizer.py 에서만 사용.
+# 필요할 때만 수동 설치:  pip install numpy matplotlib plotly
+# numpy
+# matplotlib
+# plotly
