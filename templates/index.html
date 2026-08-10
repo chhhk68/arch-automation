@@ -5381,9 +5381,15 @@ function planSiteSVG(){
   const gap=fs*0.6;
   const em={north:[bw*0.5,-gap],south:[bw*0.5,bd+gap],east:[bw+gap,bd*0.5],west:[-gap,bd*0.5]}[entryDir];
   const cm={north:[bw*0.85,-gap],south:[bw*0.85,bd+gap],east:[bw+gap,bd*0.82],west:[-gap,bd*0.82]}[entryDir];
-  const lblOff={north:-fs*0.9,south:fs*1.5,east:0,west:0}[entryDir];
-  h+=`<circle cx="${R(em[0])}" cy="${R(em[1])}" r="${R(fs*.5)}" fill="#2e9e5b"/><text x="${R(em[0])}" y="${R(em[1]+(entryDir==='north'?-fs:fs*1.5))}" text-anchor="middle" font-size="${R(fs*.62)}" fill="#2e7a4a">주출입</text>`;
-  h+=`<circle cx="${R(cm[0])}" cy="${R(cm[1])}" r="${R(fs*.42)}" fill="#e08a3c"/><text x="${R(cm[0])}" y="${R(cm[1]+(entryDir==='north'?-fs:fs*1.5))}" text-anchor="middle" font-size="${R(fs*.62)}" fill="#c9781f">차량</text>`;
+  // ── 보행로·차로: 도로 → 각 진입점 경로선(차량동선·사람동선 분리 시각화) ──
+  //  보행로=초록 실선(가늘게), 차로=주황 굵은 실선. 같은 전면도로에서 분리 진입.
+  const roadPt=(m)=>{ if(entryDir==='south')return [m[0],bd+roff]; if(entryDir==='north')return [m[0],-roff];
+    if(entryDir==='east')return [bw+roff,m[1]]; return [-roff,m[1]]; };
+  const ep=roadPt(em), cp=roadPt(cm);
+  h+=`<line x1="${R(em[0])}" y1="${R(em[1])}" x2="${R(ep[0])}" y2="${R(ep[1])}" stroke="#2e9e5b" stroke-width="${R(fs*.14)}" stroke-dasharray="${R(fs*.4)} ${R(fs*.25)}"/>`;
+  h+=`<line x1="${R(cm[0])}" y1="${R(cm[1])}" x2="${R(cp[0])}" y2="${R(cp[1])}" stroke="#e08a3c" stroke-width="${R(fs*.3)}"/>`;
+  h+=`<circle cx="${R(em[0])}" cy="${R(em[1])}" r="${R(fs*.5)}" fill="#2e9e5b"/><text x="${R(em[0])}" y="${R(em[1]+(entryDir==='north'?-fs:fs*1.5))}" text-anchor="middle" font-size="${R(fs*.62)}" fill="#2e7a4a">주출입(보행)</text>`;
+  h+=`<circle cx="${R(cm[0])}" cy="${R(cm[1])}" r="${R(fs*.42)}" fill="#e08a3c"/><text x="${R(cm[0])}" y="${R(cm[1]+(entryDir==='north'?-fs:fs*1.5))}" text-anchor="middle" font-size="${R(fs*.62)}" fill="#c9781f">차량진입</text>`;
   // 방위표 (N, 좌상단 — 도로 라벨과 겹침 방지)
   const nx=vb.x+fs*1.6, ny=vb.y+fs*1.8;
   h+=`<circle cx="${R(nx)}" cy="${R(ny)}" r="${R(fs*1.1)}" fill="#fff" stroke="#8a93a5" stroke-width="${R(fs*.08)}"/>`
@@ -6424,6 +6430,16 @@ function _planDoors(rooms, g){
     adj[P.A.id].push(P.B.id); adj[P.B.id].push(P.A.id); P._door=true;
   }
   pairs.forEach(p=>{ if(p.want) addDoor(p); });
+  // 코어(계단·EV) 진입문: 각 코어에 인접한 '순환·공용실'과 문 1개(계단실이 층에서 고립되지 않도록)
+  //  우선순위: 홀·승강장/복도 > 허브 > 기타 공용실(화장실·설비·사적실은 제외)
+  rooms.filter(r=>r.cat==='core').forEach(core=>{
+    const cand=pairs.filter(p=>(p.A.id===core.id||p.B.id===core.id)&&!p._door)
+      .map(p=>{ const o=(p.A.id===core.id)?p.B:p.A; return {p,o}; })
+      .filter(x=>{ const o=x.o; return o.cat!=='core'&&o.cat!=='setback'&&!_wet(o)&&o.zone!=='private'
+                    &&(o.cat==='lobby'||o.cat==='corr'||o.hub||o.zone==='public'||o.zone==='entry'); })
+      .sort((a,b)=>{ const sc=o=>(o.cat==='corr'?4:o.cat==='lobby'?3:o.hub?2:1); return sc(b.o)-sc(a.o); });
+    if(cand.length) addDoor(cand[0].p);
+  });
   // 도달성: 진입(entry)·로비에서 BFS. 미도달 실은 인접 실과 문 추가
   const start=rooms.find(r=>r.zone==='entry')||rooms.find(r=>r.cat==='lobby')||rooms.find(r=>r.hub)||rooms[0];
   const seen={}; if(start){ const q=[start.id]; seen[start.id]=1;
@@ -6485,6 +6501,37 @@ function _solarInsetM(fi){
   const dNeed=hTop<=10?1.5:hTop/2;
   return Math.max(0, dNeed - sbN);
 }
+// ── 수직 조닝: 층별 실 구성 분화 ──────────────────────────────────────────────
+//  건축 타당성: 진입층(1층)만 로비·현관 → 상층은 반복(코어 홀·승강장이 분배).
+//  단독주택은 1층=생활공간(현관·거실·주방), 상층=침실존(가족실 허브+침실) — 수직 조닝의 핵심.
+//  floors<=1이면 전체 프로그램 그대로. base=planSPGet(use) 결과(층 전체 프로그램).
+function _floorProgram(use, fi, floors, base){
+  if(floors<=1 || !base || !base.length) return base;
+  const key=_progKey(use);
+  const isGround=(fi===0);
+  const clone=r=>Object.assign({},r);
+  if(key==='단독주택'){
+    const sleepK=['br1','ba1','br2','br3','br4'];   // 안방·안방욕실·침실
+    if(isGround){
+      // 생활층: 사적실(침실·안방)을 제외한 실만 (현관·거실·주방·공용욕실·다용도·마당)
+      return base.filter(r=> !sleepK.includes(r.key) && r.zone!=='private');
+    }
+    // 상층(침실층): 가족실(허브) + 안방·침실 + 상층 공용욕실 → 계단→가족실→각 침실
+    const liv=base.find(r=>r.key==='liv')||{area:16}, bth=base.find(r=>r.key==='bath')||{area:6};
+    const up=[{name:'가족실·홀',cat:'unit',area:Math.max(10,Math.round(liv.area*0.7)),count:1,
+               key:'fam',zone:'public',hub:true,adj:sleepK.concat('bath2')}];
+    base.filter(r=> sleepK.includes(r.key)).forEach(r=>{ const c=clone(r);
+      c.adj=(c.adj||[]).filter(k=>k!=='liv'&&k!=='ldk'); if(c.adj.indexOf('fam')<0) c.adj.push('fam'); up.push(c); });
+    up.push({name:'욕실',cat:'mech',area:Math.max(4,Math.round(bth.area*0.8)),count:1,
+             key:'bath2',zone:'service',hub:false,adj:['fam']});
+    return up;
+  }
+  // 반복층 용도(업무·숙박·공동주택·판매·근생·의료·교육 등): 상층은 진입존(로비·현관) 제외
+  //  → 로비는 1층만, 상층은 코어 홀·승강장이 분배(기준층 반복). 공동주택 세대층 등 '동일 반복'도 이 경로.
+  if(isGround) return base;
+  const up=base.filter(r=> r.zone!=='entry');
+  return up.length?up:base;
+}
 // ── 조닝: 스페이스 프로그램 → 인접·동선(허브 중심) 배치 + 문 ───────────────────
 function planZonePack(fi){
   const P=S.plan;
@@ -6545,10 +6592,12 @@ function planZonePack(fi){
     for(let r=solarRows;r<solarRows+coreH;r++)for(let c=coreX0;c<coreX0+coreW;c++) grid[r][c]=room.id;
     rooms.push(room);
     // 코어 열의 잔여부 → 승강장(공용홀) : 배치영역을 직사각형으로 유지하면서 면적 낭비 방지
-    //  단독주택은 전용계단만 필요 → 잔여를 홀로 채우지 않고 인접 실이 흡수(거대 계단홀·동선분단 방지)
-    if(!isHouse && regH-coreH>=1){
-      const hall={id:nid(),name:isHouse?'계단홀':'홀·승강장',cat:'lobby',zone:'public',adj:[]};
-      hall.gx=coreX0;hall.gy=solarRows+coreH;hall.gw=coreW;hall.gh=regH-coreH;
+    //  단독주택은 전용계단만 필요 → 거대 계단홀 대신 1칸 계단참(landing)만 두고 잔여는 인접실이 흡수
+    //  (계단참이 계단↔각 층 실을 잇는 최소 순환절점 — 이게 없으면 상층 계단이 고립됨)
+    if(regH-coreH>=1){
+      const hallH = isHouse ? 1 : (regH-coreH);
+      const hall={id:nid(),name:isHouse?'계단참':'홀·승강장',cat:'lobby',zone:'public',adj:[]};
+      hall.gx=coreX0;hall.gy=solarRows+coreH;hall.gw=coreW;hall.gh=hallH;
       for(let r=hall.gy;r<hall.gy+hall.gh;r++)for(let c=coreX0;c<coreX0+coreW;c++) grid[r][c]=hall.id;
       rooms.push(hall);
     }
@@ -6557,7 +6606,7 @@ function planZonePack(fi){
   const usableArea=Math.max(cellA,(rows*cols - rooms.reduce((a,r)=>a+r.gw*r.gh,0))*cellA);
 
   // ── 프로그램 실(메타데이터 포함) → 셀 스케일 ──────────────────────────────
-  const program=planSPGet(use);
+  const program=_floorProgram(use, fi, P.floors, planSPGet(use));   // 수직 조닝: 층별 실 구성 분화
   let items=[]; (program||[]).forEach(pr=>{ const cnt=Math.max(1,parseInt(pr.count)||1);
     for(let k=0;k<cnt;k++) items.push({name:pr.name,cat:pr.cat,area:+pr.area||10,
       key:pr.key||null, zone:pr.zone||'public', hub:!!pr.hub, adj:(pr.adj||[]).slice()}); });
@@ -6663,14 +6712,22 @@ function planZonePack(fi){
     // 공용동선(허브·복도·현관 외 홀)에 접하면 보상
     const goodCirc=(a,b)=>a.hub||b.hub||a.cat==='corr'||b.cat==='corr'
       ||((a.cat==='lobby'&&a.zone!=='entry')||(b.cat==='lobby'&&b.zone!=='entry'));
+    // 향(orientation): 그리드 하단(gy 큰 쪽)=남향(정북이 상단). 채광 우선실은 남향, 서비스실은 북향 선호
+    //  거실·침실·가족실·객실·병실(주거·주 사용실) = 남향 / 화장실·욕실·설비·창고 = 북향(내부) — 연계 다음의 tie-break
+    const _sunPri=r=>!!r.hub || (r.cat==='unit'&&(r.zone==='public'||r.zone==='private')) || r.cat==='retail';
+    const _sunAvoid=r=>r.cat==='mech'||r.zone==='service';
     function bestPos(pr,gw,gh){ let best=null,bs=-1e9;
+      const orientW = (_sunPri(pr)||_sunAvoid(pr)) ? 60 : 0;
       for(let r=Ry;r<=rows-gh;r++)for(let c=0;c<=cols-gw;c++){ if(!canPlace(c,r,gw,gh)) continue;
         let s=0,t=0,bad=0; rooms.forEach(P=>{ if(P.cat==='core'||P.cat==='setback') return;
           const L=_sharedLen(c,r,gw,gh,P.gx,P.gy,P.gw,P.gh); if(L<=0) return; t+=L;
           if(_adjPair(pr,P)) s+=L*2;            // adj 명시 연결 = 강한 보상
           else if(goodCirc(pr,P)) s+=L;          // 공용동선 접함 = 보상
           if(_badPlace(pr,P)) bad+=L; });        // 부적합 동선 = 벌점
-        const sc=s*1000 - bad*1200 + t-(r*cols+c)*0.001; if(sc>bs){ bs=sc; best=[c,r]; } }
+        const southness=(r+gh/2-Ry)/Math.max(1,rows-Ry);   // 0(북)~1(남)
+        const orient = _sunPri(pr)?southness : _sunAvoid(pr)?(1-southness) : 0;
+        const sc=s*1000 - bad*1200 + t + orient*orientW - (r*cols+c)*0.001;
+        if(sc>bs){ bs=sc; best=[c,r]; } }
       return best; }
     // 진입실 → 진입 방향 가장자리
     if(entryPr){ let [ew,eh]=sq(entryPr.cells); ew=Math.min(ew,Rw); eh=Math.min(eh,Math.max(1,Math.floor(Rh/3)));
