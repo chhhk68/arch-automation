@@ -391,12 +391,32 @@ def _mask_key(v: str) -> str:
     return ("•" * max(0, len(v) - 4)) + v[-4:] if len(v) > 4 else "•" * len(v)
 
 
+def _config_api_allowed() -> tuple[bool, str]:
+    """민감한 config API(키 조회/저장) 접근 허용 여부 검사 (host 가드).
+
+    - Codespaces 등 원격 컨테이너: API 키는 환경변수/Secrets로 주입되므로 config API를
+      완전 비활성화한다. (포트를 Public으로 열어도 키 노출·덮어쓰기 불가)
+      ※ Codespaces는 포트포워딩 프록시가 요청을 localhost로 중계하므로 루프백
+        검사만으로는 외부 접근을 막지 못한다 → 환경변수로 원격 여부를 판별.
+    - 그 외(로컬 개발): 루프백(127.0.0.1/::1)에서 온 요청만 허용.
+    """
+    if os.environ.get("CODESPACES") or os.environ.get("CONFIG_API_DISABLED"):
+        return False, "원격 환경에서는 설정 API가 비활성화됩니다 (API 키는 환경변수/Secrets로 주입하세요)."
+    addr = (request.remote_addr or "").strip()
+    if addr in ("127.0.0.1", "::1", "localhost") or addr.startswith("127."):
+        return True, ""
+    return False, "설정 API는 로컬(localhost)에서만 접근할 수 있습니다."
+
+
 # ─── Routes ────────────────────────────────────────────────────────────────
 
 
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     """현재 설정된 API 키 목록을 마스킹해 반환 (localhost 전용 관리 UI용)."""
+    ok, msg = _config_api_allowed()
+    if not ok:
+        return jsonify({"error": msg, "items": []}), 403
     cfg = _cfg()
     items = [{
         "key":   k,
@@ -411,6 +431,9 @@ def api_config_get():
 @app.route("/api/config", methods=["POST"])
 def api_config_set():
     """전달된 키 값만 config.json에 저장 (빈 값은 무시 → 기존 값 유지)."""
+    ok, msg = _config_api_allowed()
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 403
     data = request.get_json(silent=True) or {}
     allowed = {k for (k, _l, _d) in _CONFIG_KEYS}
     try:
