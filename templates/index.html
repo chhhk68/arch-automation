@@ -914,6 +914,16 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
          <label class="lbl">주용도 <span style="color:var(--accent)">(필지 입력 탭 연동)</span></label>
          <select id="pl-use" onchange="planUseChange()"></select>
        </div>
+       <div class="fg">
+         <label class="lbl">건축물 스토리 <span style="color:var(--muted);font-weight:400">(선택 — 입력 시 조닝에 반영, 미입력 시 자동 제안)</span></label>
+         <textarea id="pl-story" rows="2" placeholder="예) 1층은 카페, 위층은 재택근무 서재를 둔 남향 거실 중시의 3자녀 가족 주택 / 옥상정원"
+           style="width:100%;font-size:11px;resize:vertical;line-height:1.4" oninput="S.plan.story=this.value"></textarea>
+         <div style="display:flex;gap:6px;margin-top:5px;align-items:center">
+           <button class="btn bp btn-sm" style="font-size:11px" onclick="planStoryApply()">📖 스토리 반영</button>
+           <button class="btn bo btn-sm" style="font-size:11px" onclick="planStoryClear()">자동 제안으로</button>
+           <span id="pl-story-note" style="font-size:10px;color:var(--muted);flex:1"></span>
+         </div>
+       </div>
        <div class="g2 fg">
          <div>
            <label class="lbl">평면 형식 <span class="qi" data-tip="중심코어: 코어 중앙+주변 오픈(업무). 중복도: 중앙복도 양측(숙박·소형). 편복도: 북측복도+남측유닛(공동주택 채광). 오픈플랜: 코어외 개방(판매·근생). 중정형: 중앙 중정(대형 판상).">?</span></label>
@@ -6199,6 +6209,65 @@ function _progKey(use){
   return SPACE_PROGRAM_DEF[use]?use:'업무시설';
 }
 // 이용 규모(occ)에 따라 실 목록(개수·추가실)을 자동 조정 — [{r:defRoom, count}]
+// ── 스토리(기획 문장) 키워드 파서 → 조닝 반영 조정치 ────────────────────────
+//  미입력 시 null 반환(기존 자동제안 유지). 키워드 규칙 기반(오프라인). AI 파싱은 추후 옵션.
+function _parseStory(text){
+  if(!text||!text.trim()) return null;
+  const t=text.replace(/\s+/g,' ');
+  const has=(re)=>re.test(t);
+  const adj={ bedsDelta:0, addRooms:[], floor0Use:null, singleStory:false, livingSouth:false, notes:[] };
+  const addR=(o,note)=>{ adj.addRooms.push(o); if(note)adj.notes.push(note); };
+  // 저층 상업(주거 등 + 1층 카페·상가) → 1층을 근린생활로 전환(점포=카페/상가로 배치)
+  if(has(/카페|커피|베이커리|빵집|디저트/)){ adj.floor0Use='근린생활시설'; adj.notes.push('1층 카페(근린생활)'); }
+  if(has(/1층[^.]*?(상가|점포|가게|상업|근생|매장)|(상가|점포|가게|상업|근생|매장)[^.]*?1층|저층[^.]*?(상가|상업|근생)/)){
+    if(!adj.floor0Use){ adj.floor0Use='근린생활시설'; adj.notes.push('1층 근린생활(상가)'); } }
+  // 업무·재택·서재
+  if(has(/서재|재택|홈오피스|홈 오피스|공부방|작업실|아틀리에|스튜디오|사무공간/)){
+    addR({k:'study',name:'서재·작업실',cat:'unit',r:0.11,zone:'private',adj:['fam','liv'],floor:'top'},'서재·작업실'); }
+  // 취미·운동
+  if(has(/취미|홈짐|헬스|운동|피트니스|요가|음악실|서예|공방/)){
+    addR({k:'hobby',name:'취미실',cat:'unit',r:0.10,zone:'public',adj:['liv','fam'],floor:'any'},'취미실'); }
+  // 게스트·손님
+  if(has(/게스트|손님방|손님용|하숙|다세대 손님|객실/)){
+    addR({k:'guest',name:'게스트룸',cat:'unit',r:0.10,zone:'private',adj:['fam','liv'],floor:'top'},'게스트룸'); }
+  // 수납·드레스룸
+  if(has(/드레스룸|드레스 룸|수납|팬트리|워크인/)){
+    addR({k:'dress',name:'드레스룸',cat:'mech',r:0.06,zone:'service',adj:['br1'],floor:'top'},'드레스룸'); }
+  // 다락
+  if(has(/다락/)) addR({k:'attic',name:'다락',cat:'unit',r:0.08,zone:'private',adj:['fam'],floor:'top'},'다락');
+  // 옥상정원·테라스
+  if(has(/옥상정원|옥상 정원|루프탑|옥상 텃밭|스카이/)) adj.notes.push('옥상정원(최상층 옥외)');
+  if(has(/테라스|발코니 확장/)) addR({k:'terr',name:'테라스',cat:'yard',r:0.10,zone:'ext',adj:['liv','fam'],floor:'any'},'테라스');
+  // 마당·정원
+  if(has(/마당|정원|텃밭|데크|바비큐|정원 있는/)) addR({k:'gardn',name:'마당·정원',cat:'yard',r:0.16,zone:'ext',adj:['liv'],floor:'ground'},'마당·정원');
+  // 향
+  if(has(/남향|채광|햇빛|햇살|볕|일조|밝은 거실/)){ adj.livingSouth=true; adj.notes.push('남향 거실 우선'); }
+  // 가족 구성 → 침실 증감
+  const kids=t.match(/자녀\s*(\d)|아이\s*(\d)|(\d)\s*남매|(\d)\s*자녀/);
+  if(kids){ const n=+(kids[1]||kids[2]||kids[3]||kids[4]); if(n>0){ adj.kidsBeds=n; adj.notes.push('자녀 '+n+'명(침실 반영)'); } }
+  if(has(/3대|삼대|대가족|부모님[^.]*?(모시|함께|같이)|처가|시부모/)){ adj.bedsDelta+=1; adj.notes.push('3대/대가족(침실+1)'); }
+  if(has(/신혼|1인|혼자|독신|1인가구|원룸|미니멀/)){ adj.bedsDelta-=1; adj.notes.push('소가구(침실↓)'); }
+  // 단층·무장애
+  if(has(/노부부|은퇴|어르신|고령|무장애|배리어프리|휠체어|단층|평면 이동/)){ adj.singleStory=true; adj.notes.push('단층·무장애 동선'); }
+  if(!adj.notes.length) adj.notes.push('해석된 키워드 없음 — 자동 제안 유지');
+  return adj;
+}
+function planStoryApply(){
+  const P=S.plan; const el=document.getElementById('pl-story'); P.story=el?el.value:'';
+  P.storyAdj=_parseStory(P.story);
+  const note=document.getElementById('pl-story-note');
+  if(P.storyAdj){ if(note) note.textContent='반영: '+P.storyAdj.notes.join(' · ');
+    if(P.storyAdj.floor0Use && P.floors>=1){ P.floorUses=P.floorUses||Array(P.floors).fill(P.use); P.floorUses[0]=P.storyAdj.floor0Use; }
+    P.program={}; }   // 프로그램 캐시 무효화 → 재생성
+  planRecalc();
+  if(typeof planSPRender==='function' && P.step===1) planSPRender();
+}
+function planStoryClear(){
+  const P=S.plan; P.story=''; P.storyAdj=null; const el=document.getElementById('pl-story'); if(el) el.value='';
+  const note=document.getElementById('pl-story-note'); if(note) note.textContent='자동 제안으로 복귀';
+  if(P.floorUses) P.floorUses=Array(P.floors).fill(P.use);
+  P.program={}; planRecalc();
+}
 function _occRooms(key, def, occN){
   if(S.plan) S.plan._roomTrim=null;   // 방개수 자동축소 경고 초기화(해당 시 아래에서 설정)
   const list=def.rooms.map(r=>({r:Object.assign({},r), count:1}));
@@ -6209,7 +6278,9 @@ function _occRooms(key, def, occN){
     const beds=n>=84?3:(n>=59?2:1);
     setC('br2',beds>=2?1:0); setC('br3',beds>=3?1:0); setC('ba2',beds>=2?1:0);
   } else if(key==='단독주택'){               // n = 가족 수
+    const _sa=(S.plan&&S.plan.storyAdj)||null;
     let beds=Math.max(1,Math.min(4,n-1));
+    if(_sa){ if(_sa.kidsBeds) beds=_sa.kidsBeds+1; beds=Math.max(1,beds+(_sa.bedsDelta||0)); }   // 스토리: 자녀수(부부+자녀)·가족구성 우선 반영
     // 대지(건축면적) 대비 침실 수 자동 상한 — 기본실(거실·주방·욕실·현관 ≈45㎡) 외 침실당 ≥12㎡ 확보
     const fa=(S.plan&&S.plan.bw*S.plan.bd)||120;
     // 기본실(거실·주방·욕실·현관·다용도 ≈55㎡) 외 침실당 ≥13㎡ 확보 기준
@@ -6231,6 +6302,12 @@ function _occRooms(key, def, occN){
     for(let j=4;j<=n;j++) add({k:'cr'+j,name:'강의실'+j,cat:'unit',r:0.16,zone:'public',adj:['hall']});
   } else if(key==='근린생활시설'){ setC('sto',Math.max(1,n)); }
   else if(key==='판매시설'){ setC('sales',Math.max(1,n)); }
+  // ── 스토리 추가 실(중복 키 제외) — _sfloor 태그로 층 배치(수직 조닝) ──
+  const sa=(S.plan&&S.plan.storyAdj)||null;
+  if(sa&&sa.addRooms&&sa.addRooms.length){
+    sa.addRooms.forEach(o=>{ if(list.some(x=>x.r.k===o.k)) return;
+      add({k:o.k,name:o.name,cat:o.cat,r:o.r,zone:o.zone,hub:!!o.hub,adj:(o.adj||[]).slice(),_sfloor:o.floor||'any'}); });
+  }
   return list.filter(x=>x.count>0);
 }
 function _occOf(key){
@@ -6287,7 +6364,8 @@ function planSPGet(use){
     const totR=rows.reduce((s,{r,count})=>s+(r.r||0.1)*Math.max(1,count),0)||1;
     S.plan.program[key]=rows.map(({r,count})=>({name:r.name,cat:r.cat,
       area:Math.max(3,Math.round((r.r||0.1)/totR*fa)),
-      count, key:r.k, zone:r.zone||'public', hub:!!r.hub, adj:(r.adj||[]).slice()}));
+      count, key:r.k, zone:r.zone||'public', hub:!!r.hub, adj:(r.adj||[]).slice(),
+      _sfloor:r._sfloor||null}));
   }
   return S.plan.program[key];
 }
@@ -6510,26 +6588,30 @@ function _floorProgram(use, fi, floors, base){
   const key=_progKey(use);
   const isGround=(fi===0);
   const clone=r=>Object.assign({},r);
+  // 스토리 추가실 배치: _sfloor(ground/top/any). any·ground=1층, top=상층
+  const storyGround=r=> r._sfloor && (r._sfloor==='ground'||r._sfloor==='any');
+  const storyTop=r=> r._sfloor==='top';
   if(key==='단독주택'){
     const sleepK=['br1','ba1','br2','br3','br4'];   // 안방·안방욕실·침실
     if(isGround){
-      // 생활층: 사적실(침실·안방)을 제외한 실만 (현관·거실·주방·공용욕실·다용도·마당)
-      return base.filter(r=> !sleepK.includes(r.key) && r.zone!=='private');
+      // 생활층: 사적실(침실·안방) 제외 + 스토리 1층실(마당·카페·취미 등)
+      return base.filter(r=> r._sfloor ? storyGround(r) : (!sleepK.includes(r.key) && r.zone!=='private'));
     }
-    // 상층(침실층): 가족실(허브) + 안방·침실 + 상층 공용욕실 → 계단→가족실→각 침실
+    // 상층(침실층): 가족실(허브) + 안방·침실 + 상층 공용욕실 + 스토리 상층실(서재·게스트 등)
     const liv=base.find(r=>r.key==='liv')||{area:16}, bth=base.find(r=>r.key==='bath')||{area:6};
     const up=[{name:'가족실·홀',cat:'unit',area:Math.max(10,Math.round(liv.area*0.7)),count:1,
                key:'fam',zone:'public',hub:true,adj:sleepK.concat('bath2')}];
     base.filter(r=> sleepK.includes(r.key)).forEach(r=>{ const c=clone(r);
       c.adj=(c.adj||[]).filter(k=>k!=='liv'&&k!=='ldk'); if(c.adj.indexOf('fam')<0) c.adj.push('fam'); up.push(c); });
+    base.filter(r=> storyTop(r)).forEach(r=> up.push(clone(r)));   // 서재·게스트룸·드레스룸 등
     up.push({name:'욕실',cat:'mech',area:Math.max(4,Math.round(bth.area*0.8)),count:1,
              key:'bath2',zone:'service',hub:false,adj:['fam']});
     return up;
   }
   // 반복층 용도(업무·숙박·공동주택·판매·근생·의료·교육 등): 상층은 진입존(로비·현관) 제외
   //  → 로비는 1층만, 상층은 코어 홀·승강장이 분배(기준층 반복). 공동주택 세대층 등 '동일 반복'도 이 경로.
-  if(isGround) return base;
-  const up=base.filter(r=> r.zone!=='entry');
+  if(isGround) return base.filter(r=> !storyTop(r));            // 1층: 진입존+스토리(ground/any)
+  const up=base.filter(r=> r.zone!=='entry' && !storyGround(r));  // 상층: 진입존·1층전용 스토리 제외
   return up.length?up:base;
 }
 // ── 조닝: 스페이스 프로그램 → 인접·동선(허브 중심) 배치 + 문 ───────────────────
