@@ -6581,10 +6581,9 @@ function planZonePack(fi){
     // ceil: 코어 최소 소요면적 미달 방지 + 최소 폭(일반 2.5m=계단+승강기 / 단독주택 1.2m=전용계단)
     coreW=Math.max(Math.ceil((isHouse?1.2:2.5)/cw), Math.ceil(coreCells/Math.max(1,regH)));
     coreW=Math.max(1,Math.min(Math.max(1,Math.floor(cols/2)), coreW));
-    // 복도형·단독주택: 코어를 가장자리(좌/우 끝)로 스냅 — 중앙 코어가 평면을 분단해 거실↔침실 격리되는 것 방지
-    // 그 외 허브형(근생 등): corePos로 연속 이동
-    coreX0 = (useCorridor||isHouse) ? ((P.corePos<0.5)?0:cols-coreW)
-                         : Math.max(0,Math.min(cols-coreW, Math.round(P.corePos*(cols-coreW))));
+    // 코어를 가장자리(좌/우 끝)로 스냅 — 중앙 코어는 허브·복도 평면을 분단(거실↔실 격리)하므로 금지.
+    //  corePos<0.5면 좌, 아니면 우(사용자 이동은 좌↔우로 유지). 전 용도 공통.
+    coreX0 = (P.corePos<0.5) ? 0 : cols-coreW;
     // 코어 높이는 '소요면적'에 맞춰 산정(전높이 강제 시 과대 → 전용률 손실)
     const coreH=Math.max(2,Math.min(regH,Math.ceil(coreCells/coreW)));
     const room={id:nid(),name:isHouse?'계단실':'코어(계단·EV)',cat:'core'};
@@ -6733,10 +6732,12 @@ function planZonePack(fi){
     if(entryPr){ let [ew,eh]=sq(entryPr.cells); ew=Math.min(ew,Rw); eh=Math.min(eh,Math.max(1,Math.floor(Rh/3)));
       const ex=Math.max(Rx,Math.min(Rx+Rw-ew,Rx+Math.round((Rw-ew)/2))), ey=(entryDir==='north')?Ry:rows-eh;
       const er=mkRoom(entryPr); if(place(er,ex,ey,ew,eh)||(function(){const sp=firstFit(ew,eh);return sp&&place(er,sp[0],sp[1],ew,eh);})()) entryRoom=er; }
-    // 허브 → 중앙(진입실과 접하게)
+    // 허브 → 진입실과 접하게. 단, 진입실 없는 상층은 '중앙'(사방으로 실 배치 → 연계 극대)
     if(hubPr){ let [hw,hh]=sq(hubPr.cells); hw=Math.min(hw,Rw); hh=Math.min(hh,Rh);
       let hx=Math.max(Rx,Math.min(Rx+Rw-hw,Rx+Math.round((Rw-hw)/2)));
-      let hy=(entryDir==='north')?(entryRoom?entryRoom.gy+entryRoom.gh:Ry):Math.max(Ry,(entryRoom?entryRoom.gy-hh:rows-hh));
+      let hy;
+      if(entryRoom) hy=(entryDir==='north')?(entryRoom.gy+entryRoom.gh):(entryRoom.gy-hh);
+      else hy=Ry+Math.round((Rh-hh)/2);   // 진입실 없는 상층(침실층 등) → 허브 중앙
       hy=Math.max(Ry,Math.min(rows-hh,hy));
       const hr=mkRoom(hubPr); if(place(hr,hx,hy,hw,hh)||(function(){const sp=firstFit(hw,hh);return sp&&place(hr,sp[0],sp[1],hw,hh);})()) hubRoom=hr; }
     // 나머지 실 → 연계 공유벽 최대 위치
