@@ -528,7 +528,7 @@ def _gemini_story(key: str, story: str) -> dict:
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=key)
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")   # 별칭=항상 현행 flash(버전 고정 안 함 → deprecation 회피)
     resp = client.models.generate_content(
         model=model, contents=story,
         config=types.GenerateContentConfig(
