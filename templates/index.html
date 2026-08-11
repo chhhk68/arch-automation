@@ -924,6 +924,22 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
            <span id="pl-story-note" style="font-size:10px;color:var(--muted);flex:1"></span>
          </div>
        </div>
+       <div class="fg" style="border-top:1px dashed var(--line);padding-top:8px">
+         <label class="lbl">대지 현황 <span style="color:var(--muted);font-weight:400">(조닝·동선 반영)</span></label>
+         <div class="g3">
+           <div><label class="lbl" style="font-size:10px">경사(하향측)</label>
+             <select id="pl-slope" onchange="planZAutoSafe()">
+               <option value="">평지</option><option value="S">남측↓</option><option value="N">북측↓</option>
+               <option value="E">동측↓</option><option value="W">서측↓</option></select></div>
+           <div><label class="lbl" style="font-size:10px">경사 정도</label>
+             <select id="pl-slopeg" onchange="planZAutoSafe()"><option value="1">완만(~1:10)</option><option value="2">급경사(1:5↑)</option></select></div>
+           <div><label class="lbl" style="font-size:10px">개방·조경 방향</label>
+             <select id="pl-opendir" onchange="planZAutoSafe()">
+               <option value="">자동(남향)</option><option value="S">남</option><option value="N">북</option>
+               <option value="E">동</option><option value="W">서</option></select></div>
+         </div>
+         <div id="pl-site-note" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+       </div>
        <div class="g2 fg">
          <div>
            <label class="lbl">평면 형식 <span class="qi" data-tip="중심코어: 코어 중앙+주변 오픈(업무). 중복도: 중앙복도 양측(숙박·소형). 편복도: 북측복도+남측유닛(공동주택 채광). 오픈플랜: 코어외 개방(판매·근생). 중정형: 중앙 중정(대형 판상).">?</span></label>
@@ -5406,7 +5422,9 @@ function planSiteSVG(){
    +`<path d="M ${R(nx)} ${R(ny-fs*.9)} L ${R(nx-fs*.35)} ${R(ny+fs*.3)} L ${R(nx+fs*.35)} ${R(ny+fs*.3)} Z" fill="#c0392b"/>`
    +`<text x="${R(nx)}" y="${R(ny+fs*.95)}" text-anchor="middle" font-size="${R(fs*.6)}" fill="#5a6b86">N</text>`;
   const dirKo={north:'북',south:'남',east:'동',west:'서'}[entryDir];
-  return {svg:h, vb, note:`대지 ${fmt(P.sitePoly?_polyAreaM(P.sitePoly):bw*bd)}㎡ · 건축면적 ${fmt(bw*bd)}㎡ · 이격 ${fmt1(sb)}m · 주출입 ${dirKo}측(${roadAuto?'도로 자동감지':'수동'})`};
+  const slopeV=(document.getElementById('pl-slope')||{}).value||'';
+  const slopeKo=slopeV?({S:'남',N:'북',E:'동',W:'서'}[slopeV]+'측↓ 경사'):'';
+  return {svg:h, vb, note:`대지 ${fmt(P.sitePoly?_polyAreaM(P.sitePoly):bw*bd)}㎡ · 건축면적 ${fmt(bw*bd)}㎡ · 이격 ${fmt1(sb)}m · 주출입 ${dirKo}측(${roadAuto?'도로 자동감지':'수동'})${slopeKo?' · '+slopeKo:''}`};
 }
 function _polyAreaM(p){ let a=0; for(let i=0;i<p.length;i++){const j=(i+1)%p.length; a+=p[i][0]*p[j][1]-p[j][0]*p[i][1];} return Math.abs(a)/2; }
 // 도면 종류 전환
@@ -6634,6 +6652,9 @@ function planZonePack(fi){
   // 코어 최소면적: 일반건물=계단13+EV6+로비 / 단독주택=전용계단(≈4㎡)만
   const minCore=isHouse ? nStair*4 : nStair*13+(needEV?6:0)+(use==='공동주택'?4:10);
   const entryDir=(document.getElementById('pl-zentry')||{}).value||'south';
+  // 대지 현황: 개방·조경 방향(주요실 향, 기본 남향) + 경사(하향측 → 진입 레벨·동선)
+  const openDir=(document.getElementById('pl-opendir')||{}).value||'S';   // S/N/E/W
+  const slopeDir=(document.getElementById('pl-slope')||{}).value||'';     // '' 평지
 
   function canPlace(gx,gy,gw,gh){ if(gx<0||gy<0||gx+gw>cols||gy+gh>rows) return false;
     for(let r=gy;r<gy+gh;r++)for(let c=gx;c<gx+gw;c++) if(grid[r][c]!=null) return false; return true; }
@@ -6798,15 +6819,17 @@ function planZonePack(fi){
     const _sunPri=r=>!!r.hub || (r.cat==='unit'&&(r.zone==='public'||r.zone==='private')) || r.cat==='retail';
     const _sunAvoid=r=>r.cat==='mech'||r.zone==='service';
     function bestPos(pr,gw,gh){ let best=null,bs=-1e9;
-      const orientW = (_sunPri(pr)||_sunAvoid(pr)) ? 60 : 0;
+      const orientW = (_sunPri(pr)||_sunAvoid(pr)) ? 20 : 0;   // 연계(s*1000)·접합(t) 아래의 순수 tie-break
       for(let r=Ry;r<=rows-gh;r++)for(let c=0;c<=cols-gw;c++){ if(!canPlace(c,r,gw,gh)) continue;
         let s=0,t=0,bad=0; rooms.forEach(P=>{ if(P.cat==='core'||P.cat==='setback') return;
           const L=_sharedLen(c,r,gw,gh,P.gx,P.gy,P.gw,P.gh); if(L<=0) return; t+=L;
           if(_adjPair(pr,P)) s+=L*2;            // adj 명시 연결 = 강한 보상
           else if(goodCirc(pr,P)) s+=L;          // 공용동선 접함 = 보상
           if(_badPlace(pr,P)) bad+=L; });        // 부적합 동선 = 벌점
-        const southness=(r+gh/2-Ry)/Math.max(1,rows-Ry);   // 0(북)~1(남)
-        const orient = _sunPri(pr)?southness : _sunAvoid(pr)?(1-southness) : 0;
+        // 개방·조경 방향(openDir) 쪽일수록 채광우선실 보상. 그리드: 상단=북·하단=남·좌=서·우=동
+        const ry=(r+gh/2-Ry)/Math.max(1,rows-Ry), cx=(c+gw/2)/Math.max(1,cols);
+        const openGood = openDir==='N'?(1-ry) : openDir==='E'?cx : openDir==='W'?(1-cx) : ry;   // 기본 S
+        const orient = _sunPri(pr)?openGood : _sunAvoid(pr)?(1-openGood) : 0;
         const sc=s*1000 - bad*1200 + t + orient*orientW - (r*cols+c)*0.001;
         if(sc>bs){ bs=sc; best=[c,r]; } }
       return best; }
@@ -7158,6 +7181,26 @@ function planZAuto(){ const P=S.plan; if(P.zsel==null) P.zsel=0;
   P.cache[P.zsel]=planZonePack(P.zsel); P.zselRoom=null;
   planZRender(); planRenderProgram(); planRenderChecks();
   const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }
+// 대지 현황(경사·개방방향) 안내문 — 동선·향 반영 요지
+function _siteContextNote(){
+  const slope=(document.getElementById('pl-slope')||{}).value||'';
+  const grade=(document.getElementById('pl-slopeg')||{}).value||'1';
+  const open=(document.getElementById('pl-opendir')||{}).value||'';
+  const dK={S:'남',N:'북',E:'동',W:'서'}, opp={S:'N',N:'S',E:'W',W:'E'};
+  const parts=[];
+  if(slope){ const steep=(grade==='2');
+    parts.push(`경사지(${dK[slope]}측↓): 주출입·주차는 ${dK[slope]}측(저지대), ${dK[opp[slope]]}측 옹벽/성토`
+      +(steep?' · 급경사→하부 필로티(주차)·스킵플로어 검토':' · 반지하·단높이 조정')); }
+  parts.push(open?`주요실 ${dK[open]}향(개방·조경측) 배치`:'주요실 남향 배치(기본)');
+  return parts.join('  /  ');
+}
+// 대지 현황(경사·개방방향) 변경 → 안내 갱신 + 전 층 재생성(플랜 미초기화면 안내만)
+function planZAutoSafe(){ const P=S.plan;
+  const nEl=document.getElementById('pl-site-note'); if(nEl) nEl.textContent=_siteContextNote();
+  if(!P||!P.inited) return;
+  try{ P.cache=Array.from({length:P.floors},(_,i)=>planZonePack(i)); planZRender(); planRenderProgram(); planRenderChecks();
+    const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }catch(e){}
+}
 // 실 선택 정보 표시
 function _zSelInfo(zid){
   const pl=S.plan.cache[S.plan.zsel]; const r=pl&&pl.rooms.find(x=>x.id===zid);
