@@ -1,6 +1,7 @@
 # 웹앱(app.py) 구동에 필요한 최소 의존성 — Codespaces 빌드 경량화
 flask
 requests
+openai            # 건축물 스토리 AI 해석(/api/story-parse). 키 없으면 키워드 폴백
 
 # ── 선택(웹앱 실행에는 불필요) ──
 # 아래는 CLI 시각화(main.py)·테스트(test_full.py)·mass/visualizer.py 에서만 사용.

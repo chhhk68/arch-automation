@@ -351,6 +351,7 @@ _ENV_KEYS = {
     "vworld_attr_key": "VWORLD_ATTR_KEY",
     "vworld_wfs_key":  "VWORLD_WFS_KEY",
     "luris_key":       "LURIS_KEY",
+    "openai_key":      "OPENAI_KEY",
 }
 
 
@@ -380,6 +381,7 @@ _CONFIG_KEYS = [
     ("vworld_attr_key", "VWorld 속성(WFS) 키",   "용도지역·지구 속성 조회 (미설정 시 vworld_key 사용)"),
     ("vworld_wfs_key",  "VWorld WFS 키",         "주변 건물(WFS) 조회 (미설정 시 vworld_key 사용)"),
     ("luris_key",       "토지이용규제(LURIS) 키", "토지이용계획 규제사항 조회"),
+    ("openai_key",      "OpenAI(GPT) 키",         "건축물 스토리 AI 해석 (미설정 시 키워드 규칙 사용)"),
 ]
 
 
@@ -449,6 +451,103 @@ def api_config_set():
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     return jsonify({"ok": True, "changed": changed})
+
+
+# ── 건축물 스토리 AI 해석 (OpenAI) → 조닝 조정치(storyAdj) ───────────────────────
+# 키 미설정/미설치/실패 시 ok:false 반환 → 프론트가 키워드 규칙 파서로 폴백.
+_STORY_SYS = (
+    "너는 한국 건축 계획설계 보조 AI다. 사용자가 준 '건축물 스토리(기획 문장)'를 읽고, "
+    "조닝 엔진이 사용할 JSON만 출력한다. 설명·군더더기 없이 JSON 객체 하나만 반환한다.\n"
+    "스키마:\n"
+    "{\n"
+    '  "kidsBeds": 정수 또는 null,   // 자녀 수가 명시되면 그 수(침실=부부1+자녀수). 없으면 null\n'
+    '  "bedsDelta": 정수,            // 침실 증감(대가족 +1, 소가구 -1 등). 기본 0\n'
+    '  "floor0Use": "근린생활시설"|"판매시설"|null,  // 1층을 상가/카페 등으로 둘 때만, 아니면 null\n'
+    '  "singleStory": true|false,    // 단층·무장애 선호\n'
+    '  "livingSouth": true|false,    // 남향 거실/채광 강조\n'
+    '  "addRooms": [ { "k":"짧은영문키", "name":"실명(한글)", '
+    '"cat":"unit|retail|mech|yard|lobby", "zone":"public|private|service|ext", '
+    '"r":0.06~0.5, "hub":false, "adj":["liv"|"fam"|"ent"|"kit"], "floor":"ground|top|any" } ],\n'
+    '  "notes": ["해석 요약 한글 문구", ...]\n'
+    "}\n"
+    "규칙: 침실·거실·주방·현관·욕실 등 '기본실'은 addRooms에 넣지 마라(엔진이 자동 생성). "
+    "서재·작업실·게스트룸·취미실·드레스룸·다락·테라스·마당 같은 '추가실'만 addRooms에 넣어라. "
+    "주거의 생활실(거실계)은 floor:ground, 침실계 부속(서재·게스트룸·드레스룸)은 floor:top. "
+    "adj는 1층 생활실이면 'liv', 상층이면 'fam'을 주로 쓴다. cat/zone/floor는 반드시 허용값만. "
+    "해석 불가하거나 특이사항 없으면 모든 값 기본(빈 배열/0/false/null)으로."
+)
+_STORY_CAT = {"unit", "retail", "mech", "yard", "lobby"}
+_STORY_ZONE = {"entry", "public", "private", "service", "ext"}
+_STORY_FLOOR = {"ground", "top", "any"}
+_STORY_USE = {"근린생활시설", "판매시설"}
+
+
+def _sanitize_story_adj(d: dict) -> dict:
+    """LLM 출력 검증·정규화 — 허용값만 통과시켜 조닝 엔진을 보호."""
+    import re as _re
+    out = {"kidsBeds": None, "bedsDelta": 0, "floor0Use": None,
+           "singleStory": False, "livingSouth": False, "addRooms": [], "notes": []}
+    try:
+        kb = d.get("kidsBeds")
+        out["kidsBeds"] = int(kb) if isinstance(kb, (int, float)) and 0 < kb <= 8 else None
+        bd = d.get("bedsDelta", 0)
+        out["bedsDelta"] = max(-3, min(3, int(bd))) if isinstance(bd, (int, float)) else 0
+        f0 = d.get("floor0Use")
+        out["floor0Use"] = f0 if f0 in _STORY_USE else None
+        out["singleStory"] = bool(d.get("singleStory"))
+        out["livingSouth"] = bool(d.get("livingSouth"))
+        for i, r in enumerate((d.get("addRooms") or [])[:6]):
+            if not isinstance(r, dict):
+                continue
+            cat = r.get("cat") if r.get("cat") in _STORY_CAT else "unit"
+            zone = r.get("zone") if r.get("zone") in _STORY_ZONE else "public"
+            floor = r.get("floor") if r.get("floor") in _STORY_FLOOR else "any"
+            try:
+                rr = float(r.get("r", 0.1))
+            except Exception:
+                rr = 0.1
+            rr = max(0.04, min(0.5, rr))
+            k = str(r.get("k") or ("s%d" % i))
+            k = (_re.sub(r"[^a-zA-Z0-9]", "", k) or ("s%d" % i))[:8]
+            name = str(r.get("name") or "실")[:20]
+            adj = [a for a in (r.get("adj") or []) if isinstance(a, str)][:4]
+            out["addRooms"].append({"k": k, "name": name, "cat": cat, "zone": zone,
+                                    "r": rr, "hub": bool(r.get("hub")), "adj": adj, "floor": floor})
+        out["notes"] = [str(n)[:60] for n in (d.get("notes") or []) if isinstance(n, (str, int, float))][:8]
+    except Exception:
+        pass
+    if not out["notes"]:
+        out["notes"] = ["AI 해석: 특이 키워드 없음"]
+    return out
+
+
+@app.route("/api/story-parse", methods=["POST"])
+def api_story_parse():
+    """건축물 스토리 → OpenAI로 조닝 조정치(storyAdj) 생성. 실패 시 ok:false(프론트 키워드 폴백)."""
+    story = ((request.get_json(silent=True) or {}).get("story") or "").strip()
+    if not story:
+        return jsonify({"ok": False, "error": "empty"})
+    key = _cfg().get("openai_key", "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "no_key"})
+    try:
+        from openai import OpenAI
+    except Exception:
+        return jsonify({"ok": False, "error": "sdk_missing"})
+    try:
+        client = OpenAI(api_key=key)
+        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        resp = client.chat.completions.create(
+            model=model, temperature=0.2, timeout=20,
+            response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": _STORY_SYS},
+                      {"role": "user", "content": story[:1200]}],
+        )
+        raw = resp.choices[0].message.content or "{}"
+        adj = _sanitize_story_adj(json.loads(raw))
+        return jsonify({"ok": True, "adj": adj})
+    except Exception as e:
+        return jsonify({"ok": False, "error": "api_fail", "detail": str(e)[:200]})
 
 
 @app.route("/api/roads")

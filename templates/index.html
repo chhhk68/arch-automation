@@ -918,10 +918,12 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
          <label class="lbl">건축물 스토리 <span style="color:var(--muted);font-weight:400">(선택 — 입력 시 조닝에 반영, 미입력 시 자동 제안)</span></label>
          <textarea id="pl-story" rows="2" placeholder="예) 1층은 카페, 위층은 재택근무 서재를 둔 남향 거실 중시의 3자녀 가족 주택 / 옥상정원"
            style="width:100%;font-size:11px;resize:vertical;line-height:1.4" oninput="S.plan.story=this.value"></textarea>
-         <div style="display:flex;gap:6px;margin-top:5px;align-items:center">
+         <div style="display:flex;gap:6px;margin-top:5px;align-items:center;flex-wrap:wrap">
            <button class="btn bp btn-sm" style="font-size:11px" onclick="planStoryApply()">📖 스토리 반영</button>
            <button class="btn bo btn-sm" style="font-size:11px" onclick="planStoryClear()">자동 제안으로</button>
-           <span id="pl-story-note" style="font-size:10px;color:var(--muted);flex:1"></span>
+           <label style="font-size:10.5px;display:flex;align-items:center;gap:3px;cursor:pointer" title="켜면 GPT로 문장 해석(키 필요), 끄거나 실패 시 키워드 규칙">
+             <input type="checkbox" id="pl-story-ai" style="width:auto"> AI 해석</label>
+           <span id="pl-story-note" style="font-size:10px;color:var(--muted);flex:1;min-width:120px"></span>
          </div>
        </div>
        <div class="fg" style="border-top:1px dashed var(--line);padding-top:8px">
@@ -6275,15 +6277,32 @@ function _parseStory(text){
   if(!adj.notes.length) adj.notes.push('해석된 키워드 없음 — 자동 제안 유지');
   return adj;
 }
-function planStoryApply(){
-  const P=S.plan; const el=document.getElementById('pl-story'); P.story=el?el.value:'';
-  P.storyAdj=_parseStory(P.story);
+// storyAdj를 실제 계획에 반영(키워드·AI 공통)
+function _applyStoryAdj(adj, src){
+  const P=S.plan; P.storyAdj=adj;
   const note=document.getElementById('pl-story-note');
-  if(P.storyAdj){ if(note) note.textContent='반영: '+P.storyAdj.notes.join(' · ');
-    if(P.storyAdj.floor0Use && P.floors>=1){ P.floorUses=P.floorUses||Array(P.floors).fill(P.use); P.floorUses[0]=P.storyAdj.floor0Use; }
+  if(adj){ if(note) note.textContent=(src?('['+src+'] '):'')+'반영: '+(adj.notes||[]).join(' · ');
+    if(adj.floor0Use && P.floors>=1){ P.floorUses=P.floorUses||Array(P.floors).fill(P.use); P.floorUses[0]=adj.floor0Use; }
     P.program={}; }   // 프로그램 캐시 무효화 → 재생성
   planRecalc();
   if(typeof planSPRender==='function' && P.step===1) planSPRender();
+}
+function planStoryApply(){
+  const P=S.plan; const el=document.getElementById('pl-story'); P.story=el?el.value:'';
+  const useAI=!!(document.getElementById('pl-story-ai')||{}).checked;
+  const note=document.getElementById('pl-story-note');
+  if(useAI && P.story.trim()){
+    if(note) note.textContent='AI 해석 중…';
+    fetch('/api/story-parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({story:P.story})})
+      .then(r=>r.json())
+      .then(res=>{ if(res&&res.ok&&res.adj){ _applyStoryAdj(res.adj,'AI'); }
+        else { const kw=_parseStory(P.story); _applyStoryAdj(kw,'키워드');
+          if(note){ const why=(res&&res.error==='no_key')?'키 미설정':(res&&res.error==='sdk_missing')?'SDK 없음':'AI 실패';
+            note.textContent='('+why+'→키워드) '+note.textContent; } } })
+      .catch(()=>{ _applyStoryAdj(_parseStory(P.story),'키워드'); if(note) note.textContent='(네트워크 오류→키워드) '+note.textContent; });
+    return;
+  }
+  _applyStoryAdj(_parseStory(P.story), null);
 }
 function planStoryClear(){
   const P=S.plan; P.story=''; P.storyAdj=null; const el=document.getElementById('pl-story'); if(el) el.value='';
