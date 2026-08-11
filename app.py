@@ -524,18 +524,27 @@ def _sanitize_story_adj(d: dict) -> dict:
 
 
 def _gemini_story(key: str, story: str) -> dict:
-    """Google Gemini로 스토리 → storyAdj(raw dict). google-genai SDK 사용."""
+    """Google Gemini로 스토리 → storyAdj(raw dict). google-genai SDK 사용.
+    모델: gemini-flash-lite-latest(별칭=현행 lite, deprecation 회피) + thinking 최소화 → ~1초 응답.
+    (thinking 기본 ON이면 8~12초 지연되어 UI가 반영 안 된 것처럼 보임)
+    """
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=key)
-    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")   # 별칭=항상 현행 flash(버전 고정 안 함 → deprecation 회피)
-    resp = client.models.generate_content(
-        model=model, contents=story,
-        config=types.GenerateContentConfig(
-            system_instruction=_STORY_SYS,
-            response_mime_type="application/json",
-            temperature=0.2),
-    )
+    model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+    cfg = types.GenerateContentConfig(
+        system_instruction=_STORY_SYS,
+        response_mime_type="application/json",
+        temperature=0.2,
+        thinking_config=types.ThinkingConfig(thinking_budget=128))   # 최소 사고(0은 일부 모델서 400)
+    try:
+        resp = client.models.generate_content(model=model, contents=story, config=cfg)
+    except Exception:
+        # thinking_config 미지원 모델 대비 폴백(사고 기본값)
+        resp = client.models.generate_content(
+            model=model, contents=story,
+            config=types.GenerateContentConfig(
+                system_instruction=_STORY_SYS, response_mime_type="application/json", temperature=0.2))
     return json.loads(resp.text or "{}")
 
 
