@@ -1104,6 +1104,19 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
          </div>
          <div id="pl-zstory-note" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
        </div>
+       <!-- 배치 형식(매스): 단일/중정/ㄷ자(분동)/L -->
+       <div class="tbox" style="margin-bottom:8px">
+         <div class="tbox-h">배치 형식 (매스)</div>
+         <div style="display:flex;gap:6px;align-items:center;padding:2px 0">
+           <select id="pl-massform" onchange="planZAutoSafe()" style="flex:1;font-size:11px" title="건축면적을 직사각 틀에서 벗어나게 — 중정·분동·L형">
+             <option value="single">단일동 (직사각)</option>
+             <option value="court">중정형 (중앙 마당)</option>
+             <option value="wing">ㄷ자·분동 (두 날개)</option>
+             <option value="L">L형 (모서리 공지)</option>
+           </select>
+         </div>
+         <div style="font-size:10px;color:var(--muted)">중정·분동·L형은 <b>허브형 용도(주거·근생 등)</b>에 적용. 복도형(업무·숙박)은 단일 유지. 파낸 부분=중정/외부공지.</div>
+       </div>
        <!-- 건축면적(건축라인) 형상 편집 -->
        <div class="tbox" style="margin-bottom:8px">
          <div class="tbox-h">건축라인 형상</div>
@@ -4528,7 +4541,7 @@ _renderHistory();
 // 실 분류 색상 — 파스텔톤 (SVG 평면·범례·프로그램 표 공용)
 const PLAN_CAT_COLOR={unit:'#8fb8f0',core:'#f2a6a6',corr:'#f5d98f',
                       lobby:'#c3aeee',retail:'#9bd9b6',mech:'#c0c8d4',
-                      park:'#aecbe8',ramp:'#e0be95',aisle:'#e6ecf5',void:'#eef2f8',
+                      park:'#aecbe8',ramp:'#e0be95',aisle:'#e6ecf5',void:'#d6ecdc',
                       green:'#b6e0a8',yard:'#ecdfc2',setback:'#e7d3c0'};
 const PLAN_CAT_LABEL={unit:'전용(유닛)',core:'코어(계단·EV·화장실)',corr:'복도',
                       lobby:'로비·홀',retail:'상가·근생 전용',mech:'설비',
@@ -5633,7 +5646,7 @@ function planRenderOverview(){
   const farLim=ck?ck.far_limit:(ZMAP[zone]||{}).far;
   // ▶ 층별 바닥면적: 실제 조닝 결과(정북일조 후퇴 제외한 실면적 합)에서 산출 → 평면·면적표 정합
   const floorGross=(f)=>{ const pl=P.cache[f]; if(!pl||!pl.rooms) return (P.bw*P.bd)||P.floorArea;
-    let a=0; pl.rooms.forEach(r=>{ if(r.cat!=='setback') a+=r.area; }); return a; };   // 일조 후퇴(외부)만 제외
+    let a=0; pl.rooms.forEach(r=>{ if(r.cat!=='setback'&&r.cat!=='void') a+=r.area; }); return a; };   // 일조후퇴·중정(외부) 제외
   const bldgArea=floorGross(0);                        // 건축면적 = 실제 1층 바닥면적
   // 대지면적: 법규검토·필지 우선, 미상 시 건폐율 한도로 역산 추정(건폐 100% 오표시 방지)
   let siteArea, siteEst=false;
@@ -6578,7 +6591,7 @@ function _planDoors(rooms, g){
   const pairs=[];
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
     const A=rooms[i],B=rooms[j];
-    if(A.cat==='setback'||B.cat==='setback') continue;   // 일조 후퇴(외부)엔 문 없음
+    if(A.cat==='setback'||B.cat==='setback'||A.cat==='void'||B.cat==='void') continue;   // 일조후퇴·중정 등 외부엔 문 없음
     const seg=_sharedSeg(A,B); if(!seg) continue;
     let want = _adjLink(A,B)
               || ((A.hub||B.hub || A.cat==='corr'||B.cat==='corr'
@@ -6610,7 +6623,7 @@ function _planDoors(rooms, g){
   const seen={}; if(start){ const q=[start.id]; seen[start.id]=1;
     while(q.length){ const id=q.shift(); (adj[id]||[]).forEach(n=>{ if(!seen[n]){seen[n]=1;q.push(n);} }); } }
   rooms.forEach(r=>{
-    if(r.cat==='core'||r.cat==='setback'||seen[r.id]) return;
+    if(r.cat==='core'||r.cat==='setback'||r.cat==='void'||seen[r.id]) return;
     // 이미 도달된 이웃 중 공유벽이 있는 실과 문 연결(공용동선 우선, 부적합 동선 배제)
     const cands=pairs.filter(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
       .map(p=>{ const other=(p.A.id===r.id)?p.B:p.A; return {p,other}; })
@@ -6625,7 +6638,7 @@ function _planDoors(rooms, g){
       if(any){ addDoor(any); seen[r.id]=1; }
     }
   });
-  return {doors, reachable:Object.keys(seen).length, total:rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback').length};
+  return {doors, reachable:Object.keys(seen).length, total:rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void').length};
 }
 
 // 실간 연계율 — adj 요구 쌍이 (직접 벽공유) 또는 (공통 복도에 함께 접함)이면 달성
@@ -6745,6 +6758,7 @@ function planZonePack(fi){
   // 배치엔진 분기 미리 판정(코어 위치 결정에 사용)
   const aptMulti=(use==='공동주택')&&!!(planSPGet(use)||{})._apt;
   const useCorridor=/숙박|업무|의료|판매|교육|문화|미술관|박물관|도서관/.test(use)||/미술관|박물관|도서관/.test(S.fineUse||'')||aptMulti;
+  const massForm=(document.getElementById('pl-massform')||{}).value||'single';
   // ── 코어(계단·EV) — 다층일 때만. 허브형=corePos로 연속 이동(좌↔우), 복도형=끝단(중앙코어는 복도 분단) ──
   let coreW=0, coreX0=0;
   if(P.floors>1){
@@ -6771,6 +6785,32 @@ function planZonePack(fi){
       hall.gx=coreX0;hall.gy=solarRows+coreH;hall.gw=coreW;hall.gh=hallH;
       for(let r=hall.gy;r<hall.gy+hall.gh;r++)for(let c=coreX0;c<coreX0+coreW;c++) grid[r][c]=hall.id;
       rooms.push(hall);
+    }
+  }
+  // ── 배치 형식(매스): 단일/중정/ㄷ자(분동)/L — 내부 void 예약으로 직사각 틀 탈피 ──
+  //  허브형(주거·근생 등)에만. 코어 배치 후 실행(빈 셀만 파냄 → 코어와 겹침 방지). L은 코어 반대편 코너.
+  if(massForm!=='single' && !useCorridor){
+    const rY=solarRows, rH=rows-solarRows, rW=cols; const vc=[];
+    const coreRight=(coreW>0 && coreX0+coreW>=cols);   // 코어가 우측이면 L void는 좌측
+    if(massForm==='court'){                    // 중정형: 중앙 void(둘레로 실 배치)
+      const vw=Math.max(1,Math.round(rW*0.28)), vh=Math.max(1,Math.round(rH*0.28));
+      const vx=Math.floor((rW-vw)/2), vy=rY+Math.floor((rH-vh)/2);
+      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
+    } else if(massForm==='wing'){               // ㄷ자(분동느낌): 진입 반대측 중앙을 안쪽으로 파냄 → 두 날개
+      const vw=Math.max(1,Math.round(rW*0.26)), vh=Math.max(1,Math.min(rH-2,Math.round(rH*0.42)));
+      const vx=Math.floor((rW-vw)/2), vy=(entryDir==='north')?(rows-vh):rY;
+      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
+    } else if(massForm==='L'){                  // L형: 코어 반대편 상단 코너 void(외부공지·마당)
+      const vw=Math.max(1,Math.round(rW*0.32)), vh=Math.max(1,Math.round(rH*0.34));
+      const vx=coreRight?0:(cols-vw), vy=rY;
+      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
+    }
+    if(vc.length){
+      const nm={court:'중정',wing:'중정(개방)',L:'외부공지'}[massForm]||'외부';
+      const vd={id:nid(),name:nm,cat:'void',zone:'ext',adj:[]};
+      let mnx=1e9,mny=1e9,mxx=-1,mxy=-1;
+      vc.forEach(([r,c])=>{ if(r>=0&&c>=0&&r<rows&&c<cols&&grid[r][c]==null){ grid[r][c]=vd.id; mnx=Math.min(mnx,c);mny=Math.min(mny,r);mxx=Math.max(mxx,c);mxy=Math.max(mxy,r); } });
+      if(mxx>=0){ vd.gx=mnx;vd.gy=mny;vd.gw=mxx-mnx+1;vd.gh=mxy-mny+1; rooms.push(vd); P._massVoid=true; }
     }
   }
   const coreArea=rooms.filter(r=>r.cat==='core').reduce((a,r)=>a+r.gw*r.gh*cellA,0);
@@ -6906,14 +6946,20 @@ function planZonePack(fi){
     if(entryPr){ let [ew,eh]=sq(entryPr.cells); ew=Math.min(ew,Rw); eh=Math.min(eh,Math.max(1,Math.floor(Rh/3)));
       const ex=Math.max(Rx,Math.min(Rx+Rw-ew,Rx+Math.round((Rw-ew)/2))), ey=(entryDir==='north')?Ry:rows-eh;
       const er=mkRoom(entryPr); if(place(er,ex,ey,ew,eh)||(function(){const sp=firstFit(ew,eh);return sp&&place(er,sp[0],sp[1],ew,eh);})()) entryRoom=er; }
-    // 허브 → 진입실과 접하게. 단, 진입실 없는 상층은 '중앙'(사방으로 실 배치 → 연계 극대)
+    // 허브 → 진입실과 접하게. 단, 진입실 없는 상층은 '중앙'. void(중정·분동)로 큰 허브가 안 들어가면 축소-투-핏
     if(hubPr){ let [hw,hh]=sq(hubPr.cells); hw=Math.min(hw,Rw); hh=Math.min(hh,Rh);
-      let hx=Math.max(Rx,Math.min(Rx+Rw-hw,Rx+Math.round((Rw-hw)/2)));
-      let hy;
-      if(entryRoom) hy=(entryDir==='north')?(entryRoom.gy+entryRoom.gh):(entryRoom.gy-hh);
-      else hy=Ry+Math.round((Rh-hh)/2);   // 진입실 없는 상층(침실층 등) → 허브 중앙
-      hy=Math.max(Ry,Math.min(rows-hh,hy));
-      const hr=mkRoom(hubPr); if(place(hr,hx,hy,hw,hh)||(function(){const sp=firstFit(hw,hh);return sp&&place(hr,sp[0],sp[1],hw,hh);})()) hubRoom=hr; }
+      let placedHub=false;
+      for(let t=0;t<40 && !placedHub;t++){
+        let hx=Math.max(Rx,Math.min(Rx+Rw-hw,Rx+Math.round((Rw-hw)/2)));
+        let hy; if(entryRoom) hy=(entryDir==='north')?(entryRoom.gy+entryRoom.gh):(entryRoom.gy-hh);
+        else hy=Ry+Math.round((Rh-hh)/2);
+        hy=Math.max(Ry,Math.min(rows-hh,hy));
+        const hr=mkRoom(hubPr);
+        if(place(hr,hx,hy,hw,hh)){ hubRoom=hr; placedHub=true; }
+        else { const sp=firstFit(hw,hh); if(sp&&place(hr,sp[0],sp[1],hw,hh)){ hubRoom=hr; placedHub=true; }
+          else if(hw>hh&&hw>1) hw--; else if(hh>1) hh--; else break; }
+      }
+    }
     // 나머지 실 → 연계 공유벽 최대 위치
     adjOrder(items.filter(it=>it!==entryPr&&it!==hubPr)).forEach(pr=>{
       let [gw,gh]=sq(pr.cells); let placed=false;
