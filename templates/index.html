@@ -1091,6 +1091,19 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
            <option value="east">동측 진입</option><option value="west">서측 진입</option>
          </select>
        </div>
+       <!-- 스토리 반영(조닝 탭 직접) — 용도설정 탭과 동기화 -->
+       <div class="tbox" style="margin-bottom:8px">
+         <div class="tbox-h">📖 건축물 스토리 → 조닝</div>
+         <textarea id="pl-zstory" rows="2" placeholder="예) 1층 카페, 재택 서재 2개, 3자녀 남향 주택"
+           style="width:100%;font-size:11px;resize:vertical;line-height:1.35;margin:2px 0" oninput="var m=document.getElementById('pl-story');if(m)m.value=this.value;S.plan.story=this.value"></textarea>
+         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+           <button class="btn bp btn-sm" style="font-size:11px;flex:1" onclick="planStoryApplyFromZoning()">🔄 스토리 반영·새로고침</button>
+           <label style="font-size:10.5px;display:flex;align-items:center;gap:3px;cursor:pointer" title="켜면 GPT/Gemini로 문장 해석">
+             <input type="checkbox" id="pl-zstory-ai" onchange="var m=document.getElementById('pl-story-ai');if(m)m.checked=this.checked"> AI</label>
+           <button class="btn bo btn-sm" style="font-size:10.5px" onclick="planStoryClear()">해제</button>
+         </div>
+         <div id="pl-zstory-note" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+       </div>
        <!-- 건축면적(건축라인) 형상 편집 -->
        <div class="tbox" style="margin-bottom:8px">
          <div class="tbox-h">건축라인 형상</div>
@@ -6223,7 +6236,14 @@ function planStep(n){
   for(let k=0;k<4;k++){ const p=document.getElementById('pstep'+k),b=document.getElementById('ssb'+k);
     if(p)p.classList.toggle('on',k===n); if(b)b.classList.toggle('on',k===n); }
   if(n===1){ planSPUsePopulate(); planSPRender(); }
-  if(n===2){ if(P.zsel==null||P.zsel>=P.floors||P.zsel<0) P.zsel=(P.sel!=null&&P.sel>=0?P.sel:0); planZRender(); }
+  if(n===2){ if(P.zsel==null||P.zsel>=P.floors||P.zsel<0) P.zsel=(P.sel!=null&&P.sel>=0?P.sel:0);
+    // 조닝 탭 스토리 미러 동기화(용도설정 탭 입력·AI토글 반영)
+    const zs=document.getElementById('pl-zstory'), ms=document.getElementById('pl-story');
+    if(zs&&ms) zs.value=ms.value||P.story||'';
+    const za=document.getElementById('pl-zstory-ai'), ma=document.getElementById('pl-story-ai');
+    if(za&&ma) za.checked=ma.checked;
+    const zn=document.getElementById('pl-zstory-note'); if(zn&&P.storyAdj&&P.storyAdj.notes) zn.textContent='반영중: '+P.storyAdj.notes.join(' · ');
+    planZRender(); }
   if(n===3){ planRenderFloorSel(); planRenderSVG(); planRenderProgram(); planRenderChecks(); }
 }
 
@@ -6277,38 +6297,56 @@ function _parseStory(text){
   if(!adj.notes.length) adj.notes.push('해석된 키워드 없음 — 자동 제안 유지');
   return adj;
 }
-// storyAdj를 실제 계획에 반영(키워드·AI 공통)
+// 스토리 안내문 — 용도설정·조닝 두 탭의 note를 동시 갱신
+function _storyNote(t){ ['pl-story-note','pl-zstory-note'].forEach(id=>{ const n=document.getElementById(id); if(n) n.textContent=t; }); }
+// storyAdj를 실제 계획에 반영(키워드·AI 공통). 전 층 캐시 재생성 + 현재 탭(조닝/평면 포함) 강제 재렌더
 function _applyStoryAdj(adj, src){
   const P=S.plan; P.storyAdj=adj;
-  const note=document.getElementById('pl-story-note');
-  if(adj){ if(note) note.textContent=(src?('['+src+'] '):'')+'반영: '+(adj.notes||[]).join(' · ');
+  if(adj){
     if(adj.floor0Use && P.floors>=1){ P.floorUses=P.floorUses||Array(P.floors).fill(P.use); P.floorUses[0]=adj.floor0Use; }
-    P.program={}; }   // 프로그램 캐시 무효화 → 재생성
-  planRecalc();
-  if(typeof planSPRender==='function' && P.step===1) planSPRender();
+  } else if(P.floorUses){ P.floorUses=Array(P.floors).fill(P.use); }   // 해제 시 층용도 원복
+  P.program={};                                   // 프로그램 캐시 무효화 → 재생성
+  if(P.inited){
+    try{ planRecalc(); }catch(e){}
+    // planRecalc가 현재 탭만 렌더 → 조닝/평면 탭이면 확실히 갱신
+    try{ if(P.step===2 && typeof planZRender==='function') planZRender(); }catch(e){}
+    try{ if(P.step===3 && typeof planRenderSVG==='function') planRenderSVG(); }catch(e){}
+    try{ if(P.step===1 && typeof planSPRender==='function') planSPRender(); }catch(e){}
+  }
+  _storyNote((src?('['+src+'] '):'')+'반영: '+(adj&&adj.notes&&adj.notes.length?adj.notes.join(' · '):'특이사항 없음(자동 제안)'));
 }
+// 통합 스토리 반영 — 용도설정·조닝 두 탭의 버튼이 공용. #pl-story 텍스트 기준.
 function planStoryApply(){
-  const P=S.plan; const el=document.getElementById('pl-story'); P.story=el?el.value:'';
+  const P=S.plan; const el=document.getElementById('pl-story'); if(el) P.story=el.value;
   const useAI=!!(document.getElementById('pl-story-ai')||{}).checked;
-  const note=document.getElementById('pl-story-note');
-  if(useAI && P.story.trim()){
-    if(note) note.textContent='AI 해석 중…';
+  if(!P.story||!P.story.trim()){ _applyStoryAdj(null,null); _storyNote('스토리 미입력 — 자동 제안'); return; }
+  if(useAI){
+    _storyNote('AI 해석 중… (약 2초, 잠시만요)');
     fetch('/api/story-parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({story:P.story})})
       .then(r=>r.json())
       .then(res=>{ if(res&&res.ok&&res.adj){ _applyStoryAdj(res.adj, 'AI:'+(res.provider==='gemini'?'Gemini':res.provider==='openai'?'GPT':'AI')); }
-        else { const kw=_parseStory(P.story); _applyStoryAdj(kw,'키워드');
-          if(note){ const why=(res&&res.error==='no_key')?'키 미설정':(res&&res.error==='sdk_missing')?'SDK 없음':'AI 실패';
-            note.textContent='('+why+'→키워드) '+note.textContent; } } })
-      .catch(()=>{ _applyStoryAdj(_parseStory(P.story),'키워드'); if(note) note.textContent='(네트워크 오류→키워드) '+note.textContent; });
+        else { _applyStoryAdj(_parseStory(P.story),'키워드');
+          const why=(res&&res.error==='no_key')?'키 미설정':(res&&res.error==='sdk_missing')?'SDK 없음':'AI 실패';
+          _storyNote('('+why+'→키워드) '+((document.getElementById('pl-story-note')||{}).textContent||'')); } })
+      .catch(()=>{ _applyStoryAdj(_parseStory(P.story),'키워드'); _storyNote('(네트워크 오류→키워드) '+((document.getElementById('pl-story-note')||{}).textContent||'')); });
     return;
   }
   _applyStoryAdj(_parseStory(P.story), null);
 }
+// 조닝 탭 미러 입력 동기화 후 반영
+function planStoryApplyFromZoning(){
+  const z=document.getElementById('pl-zstory'), m=document.getElementById('pl-story');
+  if(z&&m) m.value=z.value;   // 조닝 탭 입력 → 원본 동기화
+  const za=document.getElementById('pl-zstory-ai'), ma=document.getElementById('pl-story-ai');
+  if(za&&ma) ma.checked=za.checked;
+  planStoryApply();
+}
 function planStoryClear(){
-  const P=S.plan; P.story=''; P.storyAdj=null; const el=document.getElementById('pl-story'); if(el) el.value='';
-  const note=document.getElementById('pl-story-note'); if(note) note.textContent='자동 제안으로 복귀';
+  const P=S.plan; P.story=''; P.storyAdj=null;
+  ['pl-story','pl-zstory'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   if(P.floorUses) P.floorUses=Array(P.floors).fill(P.use);
-  P.program={}; planRecalc();
+  P.program={}; if(P.inited){ try{planRecalc();}catch(e){} try{if(P.step===2)planZRender();}catch(e){} }
+  _storyNote('자동 제안으로 복귀');
 }
 function _occRooms(key, def, occN){
   if(S.plan) S.plan._roomTrim=null;   // 방개수 자동축소 경고 초기화(해당 시 아래에서 설정)
@@ -6388,7 +6426,14 @@ function planSPGet(use){
       const netFa=((S.plan.bw*S.plan.bd)||S.plan.floorArea||300)*0.65;   // 코어·복도·홀 제외 세대 순면적 개략(세대크기≈믹스 명목치)
       const aptRows=_apartmentUnits(netFa);   // 2세대 이상일 때만 세대 목록, 소형은 null → 룸 프로그램
       if(aptRows&&aptRows.length){
-      const sig='apt|'+Math.round(netFa)+'|'+mix.map(m=>m.name+m.area+m.ratio.toFixed(3)).join(';');
+      // 스토리 추가실(커뮤니티실·게스트하우스 등)을 세대 목록에 append — apt 경로가 _occRooms 우회하는 문제 보완
+      const _sa=(S.plan&&S.plan.storyAdj)||null;
+      if(_sa&&_sa.addRooms&&_sa.addRooms.length){ const fa=(S.plan.bw*S.plan.bd)||netFa;
+        _sa.addRooms.forEach(o=>{ if(aptRows.some(x=>x.key===o.k)) return;
+          aptRows.push({name:o.name,cat:o.cat,area:Math.max(6,Math.round((o.r||0.1)*fa)),count:1,
+            key:o.k,zone:o.zone,hub:!!o.hub,adj:(o.adj||[]).slice(),_sfloor:o.floor||'any'}); }); }
+      const sig='apt|'+Math.round(netFa)+'|'+mix.map(m=>m.name+m.area+m.ratio.toFixed(3)).join(';')
+        +'|st:'+(_sa?JSON.stringify(_sa.addRooms||[]):'');
       const c=S.plan.program[key];
       if(!c||!c._apt||c._sig!==sig){ const rows=aptRows; rows._apt=true; rows._sig=sig; S.plan.program[key]=rows; }
       return S.plan.program[key];

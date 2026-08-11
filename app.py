@@ -474,9 +474,11 @@ _STORY_SYS = (
     "}\n"
     "규칙: 침실·거실·주방·현관·욕실 등 '기본실'은 addRooms에 넣지 마라(엔진이 자동 생성). "
     "서재·작업실·게스트룸·취미실·드레스룸·다락·테라스·마당 같은 '추가실'만 addRooms에 넣어라. "
-    "주거의 생활실(거실계)은 floor:ground, 침실계 부속(서재·게스트룸·드레스룸)은 floor:top. "
-    "adj는 1층 생활실이면 'liv', 상층이면 'fam'을 주로 쓴다. cat/zone/floor는 반드시 허용값만. "
-    "해석 불가하거나 특이사항 없으면 모든 값 기본(빈 배열/0/false/null)으로."
+    "★중요: floor0Use를 '근린생활시설'로 설정하면 1층 상업(카페·빵집·상가·매장)은 그것으로 이미 표현되므로 "
+    "카페·빵집·상가·점포·매장을 addRooms에 별도로 넣지 마라(중복). "
+    "서재·게스트룸·취미실·드레스룸·다락 등 주거 부속실은 거의 항상 floor:top(상층). "
+    "마당·테라스·정원만 floor:ground. adj는 상층 부속실이면 'fam', 1층 생활실이면 'liv'. "
+    "cat/zone/floor는 반드시 허용값만. 해석 불가하거나 특이사항 없으면 모든 값 기본(빈 배열/0/false/null)으로."
 )
 _STORY_CAT = {"unit", "retail", "mech", "yard", "lobby"}
 _STORY_ZONE = {"entry", "public", "private", "service", "ext"}
