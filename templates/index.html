@@ -1077,6 +1077,11 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
          </div>
        </div>
        <div style="font-size:10px;color:var(--muted);text-align:center;margin-bottom:8px">←↑↓→ 이동 · ⇥⇤⤓⤒ 크기 · ⟲ 자동정리</div>
+       <!-- 퍼즐식 편집: 선택 실을 보관함으로 빼냈다가 다시 배치 -->
+       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+         <button class="btn bo btn-sm" style="flex:1" onclick="planZPull()" title="선택한 실을 보관함으로 빼냅니다(빈 곳은 공용·홀로)">➖ 실 빼기(보관함)</button>
+       </div>
+       <div id="pl-ztray" style="display:none;background:var(--surf2);border:1px dashed var(--border);border-radius:8px;padding:6px;margin-bottom:8px;font-size:11px"></div>
        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
          <button class="btn bo btn-sm" style="flex:1" onclick="planZAuto()">동선 자동배치</button>
          <select id="pl-zentry" onchange="planZEntryChange()" style="flex:1;font-size:11px" title="인접 도로 방향으로 자동 설정됨(수동 변경 가능)">
@@ -7107,6 +7112,7 @@ function planZRender(){
     zp.innerHTML=`<tr><td colspan="3" style="font-size:10.5px;color:${sbOk?'var(--ok)':'var(--err)'}">대지 이격 ${fmt1(P.setbackM||0)}m ${sbOk?'준수 ✓':'⚠ 이격선 초과'}</td></tr>`+
       (rc?`<tr><td colspan="3" style="font-size:10.5px;color:${rc.reachable>=rc.total?'var(--ok)':'var(--warn)'}">동선 도달: ${rc.reachable}/${rc.total}실 · 문 ${pl.doors.length}개${cn?` · <span style="color:${cn.pct>=80?'var(--ok)':cn.pct>=50?'var(--warn)':'var(--err)'}">실간 연계 ${cn.pct}% (${cn.met}/${cn.want})</span>`:''}</td></tr>`:'')+
       '<tr><th>실</th><th style="text-align:right">개수</th><th style="text-align:right">면적</th></tr>'+Object.values(agg).map(r=>`<tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${PLAN_CAT_COLOR[r.cat]};margin-right:5px"></span>${r.name}</td><td style="text-align:right">${r.n}</td><td style="text-align:right">${fmt1(r.a)}</td></tr>`).join(''); }
+  planZRenderTray();
 }
 function _zBuildGrid(pl){ const g=pl.grid; const grid=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
   pl.rooms.forEach(r=>{ for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) grid[rr][cc]=r.id; }); return grid; }
@@ -7181,6 +7187,48 @@ function planZAuto(){ const P=S.plan; if(P.zsel==null) P.zsel=0;
   P.cache[P.zsel]=planZonePack(P.zsel); P.zselRoom=null;
   planZRender(); planRenderProgram(); planRenderChecks();
   const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }
+// ── 퍼즐식 편집: 선택 실을 보관함(트레이)으로 빼내기 ──────────────────────────
+function planZPull(){
+  const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
+  if(!P.zselRoom){ showSt('run-status','sb-warn','먼저 빼낼 실을 클릭해 선택하세요',false); return; }
+  const R=pl.rooms.find(r=>r.id===P.zselRoom);
+  if(!R||R.name==='공용·홀'||R.cat==='setback'||R.cat==='core'){
+    showSt('run-status','sb-warn','공용·홀·코어·후퇴영역은 뺄 수 없습니다',false); return; }
+  P.tray=P.tray||[];
+  P.tray.push({name:R.name,cat:R.cat,zone:R.zone,hub:!!R.hub,key:R.key||null,
+    adj:(R.adj||[]).slice(),gw:R.gw,gh:R.gh});
+  pl.rooms=pl.rooms.filter(r=>r.id!==R.id); P.zselRoom=null;
+  _zFillHall(pl); _zCommit(pl); _zSelInfo(null); planZRenderTray();
+  showSt('run-status','sb-ok', R.name+' → 보관함. 보관함에서 클릭하면 다시 배치됩니다.',false);
+}
+// 보관함의 실을 현재 층 빈 공간(공용·홀)에 다시 배치
+function planZTrayPlace(idx){
+  const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
+  P.tray=P.tray||[]; const it=P.tray[idx]; if(!it) return;
+  const g=pl.grid;
+  const occ=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
+  pl.rooms.forEach(r=>{ if(r.name==='공용·홀') return;   // 홀·빈칸은 자유공간
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) occ[rr][cc]=r.id; });
+  const fits=(gx,gy,w,h)=>{ for(let rr=gy;rr<gy+h;rr++)for(let cc=gx;cc<gx+w;cc++){ if(rr<0||cc<0||rr>=g.rows||cc>=g.cols||occ[rr][cc]!=null) return false; } return true; };
+  let w=it.gw,h=it.gh,spot=null;
+  outer: while(w>=1&&h>=1){ for(let gy=0;gy<=g.rows-h;gy++)for(let gx=0;gx<=g.cols-w;gx++){ if(fits(gx,gy,w,h)){spot=[gx,gy];break outer;} }
+    if(w>=h&&w>1)w--; else if(h>1)h--; else break; }
+  if(!spot){ showSt('run-status','sb-warn','배치할 빈 공간이 부족합니다 — 다른 실을 옮기거나 크기를 줄이세요',false); return; }
+  const R={id:'zt'+Math.random().toString(36).slice(2,8),name:it.name,cat:it.cat,zone:it.zone,hub:it.hub,
+    key:it.key,adj:(it.adj||[]).slice(),unit:(it.cat==='unit'||it.cat==='retail'),
+    gx:spot[0],gy:spot[1],gw:w,gh:h};
+  pl.rooms.push(R); P.tray.splice(idx,1); P.zselRoom=R.id;
+  _zFillHall(pl); _zCommit(pl); _zSelInfo(R.id); planZRenderTray();
+  showSt('run-status','sb-ok', it.name+' 배치됨 — 드래그·방향키로 위치 조정',false);
+}
+function planZRenderTray(){
+  const P=S.plan; const el=document.getElementById('pl-ztray'); if(!el) return;
+  const tray=P.tray||[];
+  if(!tray.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML='<span style="font-size:10px;color:var(--muted)">보관함(클릭 → 이 층에 배치): </span>'
+    + tray.map((it,i)=>`<button class="chip" style="cursor:pointer;margin:2px" onclick="planZTrayPlace(${i})" title="클릭하면 현재 층 빈 공간에 배치">${it.name} ↩</button>`).join(' ');
+}
 // 대지 현황(경사·개방방향) 안내문 — 동선·향 반영 요지
 function _siteContextNote(){
   const slope=(document.getElementById('pl-slope')||{}).value||'';
