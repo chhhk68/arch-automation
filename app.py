@@ -352,6 +352,7 @@ _ENV_KEYS = {
     "vworld_wfs_key":  "VWORLD_WFS_KEY",
     "luris_key":       "LURIS_KEY",
     "openai_key":      "OPENAI_KEY",
+    "gemini_key":      "GEMINI_KEY",
 }
 
 
@@ -381,7 +382,8 @@ _CONFIG_KEYS = [
     ("vworld_attr_key", "VWorld 속성(WFS) 키",   "용도지역·지구 속성 조회 (미설정 시 vworld_key 사용)"),
     ("vworld_wfs_key",  "VWorld WFS 키",         "주변 건물(WFS) 조회 (미설정 시 vworld_key 사용)"),
     ("luris_key",       "토지이용규제(LURIS) 키", "토지이용계획 규제사항 조회"),
-    ("openai_key",      "OpenAI(GPT) 키",         "건축물 스토리 AI 해석 (미설정 시 키워드 규칙 사용)"),
+    ("openai_key",      "OpenAI(GPT) 키",         "건축물 스토리 AI 해석 (Gemini 키 없을 때 사용)"),
+    ("gemini_key",      "Google Gemini 키",       "건축물 스토리 AI 해석 (우선 사용, 무료 티어). 미설정 시 OpenAI/키워드"),
 ]
 
 
@@ -521,33 +523,61 @@ def _sanitize_story_adj(d: dict) -> dict:
     return out
 
 
+def _gemini_story(key: str, story: str) -> dict:
+    """Google Gemini로 스토리 → storyAdj(raw dict). google-genai SDK 사용."""
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    resp = client.models.generate_content(
+        model=model, contents=story,
+        config=types.GenerateContentConfig(
+            system_instruction=_STORY_SYS,
+            response_mime_type="application/json",
+            temperature=0.2),
+    )
+    return json.loads(resp.text or "{}")
+
+
+def _openai_story(key: str, story: str) -> dict:
+    """OpenAI(GPT)로 스토리 → storyAdj(raw dict)."""
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    resp = client.chat.completions.create(
+        model=model, temperature=0.2, timeout=20,
+        response_format={"type": "json_object"},
+        messages=[{"role": "system", "content": _STORY_SYS},
+                  {"role": "user", "content": story}],
+    )
+    return json.loads(resp.choices[0].message.content or "{}")
+
+
 @app.route("/api/story-parse", methods=["POST"])
 def api_story_parse():
-    """건축물 스토리 → OpenAI로 조닝 조정치(storyAdj) 생성. 실패 시 ok:false(프론트 키워드 폴백)."""
+    """건축물 스토리 → LLM으로 조닝 조정치(storyAdj) 생성.
+    우선순위: Gemini(gemini_key) → OpenAI(openai_key). 실패 시 ok:false → 프론트 키워드 폴백.
+    """
     story = ((request.get_json(silent=True) or {}).get("story") or "").strip()
     if not story:
         return jsonify({"ok": False, "error": "empty"})
-    key = _cfg().get("openai_key", "").strip()
-    if not key:
+    cfg = _cfg()
+    gkey = cfg.get("gemini_key", "").strip()
+    okey = cfg.get("openai_key", "").strip()
+    if gkey:
+        provider, key = "gemini", gkey
+    elif okey:
+        provider, key = "openai", okey
+    else:
         return jsonify({"ok": False, "error": "no_key"})
     try:
-        from openai import OpenAI
-    except Exception:
-        return jsonify({"ok": False, "error": "sdk_missing"})
-    try:
-        client = OpenAI(api_key=key)
-        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-        resp = client.chat.completions.create(
-            model=model, temperature=0.2, timeout=20,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": _STORY_SYS},
-                      {"role": "user", "content": story[:1200]}],
-        )
-        raw = resp.choices[0].message.content or "{}"
-        adj = _sanitize_story_adj(json.loads(raw))
-        return jsonify({"ok": True, "adj": adj})
+        raw = _gemini_story(key, story[:1200]) if provider == "gemini" else _openai_story(key, story[:1200])
+        adj = _sanitize_story_adj(raw)
+        return jsonify({"ok": True, "adj": adj, "provider": provider})
+    except ImportError:
+        return jsonify({"ok": False, "error": "sdk_missing", "provider": provider})
     except Exception as e:
-        return jsonify({"ok": False, "error": "api_fail", "detail": str(e)[:200]})
+        return jsonify({"ok": False, "error": "api_fail", "provider": provider, "detail": str(e)[:200]})
 
 
 @app.route("/api/roads")

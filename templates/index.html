@@ -6295,7 +6295,7 @@ function planStoryApply(){
     if(note) note.textContent='AI 해석 중…';
     fetch('/api/story-parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({story:P.story})})
       .then(r=>r.json())
-      .then(res=>{ if(res&&res.ok&&res.adj){ _applyStoryAdj(res.adj,'AI'); }
+      .then(res=>{ if(res&&res.ok&&res.adj){ _applyStoryAdj(res.adj, 'AI:'+(res.provider==='gemini'?'Gemini':res.provider==='openai'?'GPT':'AI')); }
         else { const kw=_parseStory(P.story); _applyStoryAdj(kw,'키워드');
           if(note){ const why=(res&&res.error==='no_key')?'키 미설정':(res&&res.error==='sdk_missing')?'SDK 없음':'AI 실패';
             note.textContent='('+why+'→키워드) '+note.textContent; } } })
