@@ -897,7 +897,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
        <div class="ptitle">규모·용도 설정</div>
        <div id="pl-src" class="sb sb-warn">규모 산정 탭을 먼저 실행하면 시나리오가 연동됩니다. (직접 입력도 가능)</div>
        <button class="btn bp btn-full" style="margin-bottom:12px" onclick="planGenAlternatives()"
-               title="법규 한도 내에서 용적률 최대화안과 환경 쾌적안 2가지를 자동 도출">⚡ 계획설계 대안 2안 자동 생성</button>
+               title="법규 한도 내에서 분양극대·일조조망·중정친환경·랜드마크 4개 아키타입을 다중목표로 평가">⚡ 계획설계 대안 4안 자동 생성 (다중목표)</button>
        <div class="fg">
          <label class="lbl">규모 시나리오 <span style="color:var(--accent)">(규모 산정 연동)</span></label>
          <select id="pl-scenario" onchange="planScenarioChange()"></select>
@@ -5997,29 +5997,37 @@ function planGenAlternatives(){
   const fh=_altFH(use), legalMax=_altLegalFloors(fh);
   const prog=PLAN_PROGRAMS[use]||PLAN_PROGRAMS['업무시설'];
 
-  // 대안 A — 용적률 최대화 (BCR 최대·판상형)
-  const bcrA=bcrL, faA=Math.min(maxGnd, site*bcrA/100);
-  const floorsA=Math.min(Math.max(1,Math.ceil(maxGFA/faA)), legalMax);
-  const gfaA=Math.min(maxGFA, faA*floorsA);
-  const corrA=(use==='공동주택')?'중복도':(use==='업무시설'?'중심코어':(prog.corridor||'오픈플랜'));
-  const A={key:'A',title:'대안 A · 용적률 최대화안', bcr:bcrA, fa:faA, floors:floorsA, gfa:gfaA,
-    farUsed:gfaA/site*100, corr:corrA, fh, park:_altParking(use,gfaA),
-    mass:_altMass(faA,floorsA,fh,false),
-    feat:'대지 활용 극대화 · 판상형(정형) · 법정 최소 이격', envNote:'용적 확보 우선 — 저층부 채광·조망 다소 불리'};
-
-  // 대안 B — 환경/공간 쾌적 (저건폐·탑상/중정·일조 step-back)
-  const bcrB=Math.max(20,Math.round(bcrL*0.6));
-  const faB=site*bcrB/100;
-  const floorsB=Math.min(Math.max(1,Math.ceil((maxGFA*0.9)/faB)), legalMax);
-  const gfaB=Math.min(maxGFA, faB*floorsB);
-  const corrB=(faB>=500)?'중정형':(use==='공동주택'?'편복도':'중심코어');
-  const B={key:'B',title:'대안 B · 환경/공간 쾌적안', bcr:bcrB, fa:faB, floors:floorsB, gfa:gfaB,
-    farUsed:gfaB/site*100, corr:corrB, fh, park:_altParking(use,gfaB),
-    mass:_altMass(faB,floorsB,fh,true),
-    feat:'건폐 완화로 오픈스페이스·인접간격 확보 · '+(corrB==='중정형'?'중정형':'탑상형')+' · 상층 일조 step-back',
-    envNote:'채광·통풍·프라이버시 우수 — 용적률은 A보다 다소 낮음'};
-
-  S.plan._alts={A,B,use,site};
+  // ── 4 아키타입 파레토 대안군 (분양극대 / 일조조망 / 중정친환경 / 랜드마크분동) ──
+  const hubUse=/단독|공동|근린|판매|미술|박물|도서/.test(use);   // 매스 분절(court/wing) 지원 용도
+  const mkAlt=(key,title,tag,bcrPct,massForm,corr,step,floorFactor,feat)=>{
+    const bcr=Math.max(15,Math.min(bcrL,Math.round(bcrPct)));
+    const fa=Math.min(maxGnd, site*bcr/100);
+    const floors=Math.min(legalMax, Math.max(1,Math.ceil(maxGFA*floorFactor/fa)));
+    const gfa=Math.min(maxGFA, fa*floors);
+    return {key,title,tag,bcr,fa,floors,gfa,farUsed:gfa/site*100,corr,massForm,solarStep:step,fh,
+      park:_altParking(use,gfa),mass:_altMass(fa,floors,fh,step),feat};
+  };
+  const alts=[
+    mkAlt('A','분양 극대화형','판상·고밀', bcrL, 'single', (use==='공동주택'?'중복도':'중심코어'), false, 1.0,
+      '건폐 최대·판상형으로 대지 활용 극대화 — 분양/임대면적 최대'),
+    mkAlt('B','일조·조망 우수형','탑상·후퇴', bcrL*0.5, 'single', (use==='공동주택'?'편복도':'중심코어'), true, 0.9,
+      '건폐 완화·정북 step-back·상층 조망 — 채광/통풍/프라이버시 우수'),
+    mkAlt('C','중정·친환경형','중정·저층', bcrL*0.62, (hubUse?'court':'single'), (use==='공동주택'?'편복도':'오픈플랜'), false, 0.82,
+      '중앙 중정으로 채광·커뮤니티·외부공간 확보 — 저층 친환경'),
+    mkAlt('D','랜드마크·분동형','분동·조형', bcrL*0.58, (hubUse?'wing':'single'), (use==='공동주택'?'편복도':'중심코어'), true, 0.95,
+      '매스 분절(분동/ㄷ자)로 조형성·독창성 — 동 사이 외부공간'),
+  ];
+  // 다중목표 점수(0~100): 분양성·일조조망·외부공간·조형성 (상충 → 파레토)
+  alts.forEach(a=>{
+    const sell=Math.round(Math.min(100, a.gfa/maxGFA*100));
+    const openBase=Math.round((1 - a.fa/site)*100);
+    const open=Math.max(0,Math.min(100, openBase + (a.massForm==='court'?18:a.massForm==='wing'?12:0)));
+    const light=Math.round(Math.min(100, 32 + (1-a.bcr/Math.max(1,bcrL))*55 + (a.solarStep?18:0) + Math.min(16,a.floors*2)));
+    const form=Math.round(Math.min(100, ({single:12,court:58,wing:78,L:66}[a.massForm]||12) + Math.min(30,a.floors*3)));
+    a.scores={분양:sell, 일조조망:light, 외부공간:open, 조형성:form};
+    a.total=Math.round((sell+light+open+form)/4);
+  });
+  S.plan._alts={use,site}; alts.forEach(a=>S.plan._alts[a.key]=a);
 
   // ── §1 요약 ──
   const parkMax=_altParking(use,maxGFA);
@@ -6046,52 +6054,37 @@ function planGenAlternatives(){
       · <b>주요 법적 제약</b> ${constraints.join(' · ')}
     </div></div>`;
 
-  // ── §2 비교표 ──
-  html+=`<div style="font-weight:700;margin:6px 0 8px">2. 계획설계 대안 분석 (A vs B)</div>
-    <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px">
-    <thead><tr style="background:var(--surf2)">
-      <th style="text-align:left;padding:7px 9px;border:1px solid var(--border)">구분</th>
-      <th style="padding:7px 9px;border:1px solid var(--border);color:var(--accent)">대안 A · 용적률 최대화</th>
-      <th style="padding:7px 9px;border:1px solid var(--border);color:var(--ok)">대안 B · 환경 쾌적</th>
-    </tr></thead><tbody>
-    ${_altTR('건축면적 / 연면적',`${money(A.fa)}㎡ / <b>${money(A.gfa)}</b>㎡`,`${money(B.fa)}㎡ / <b>${money(B.gfa)}</b>㎡`)}
-    ${_altTR('건폐율 / 용적률',`${A.bcr}% / <b>${A.farUsed.toFixed(0)}%</b>`,`${B.bcr}% / <b>${B.farUsed.toFixed(0)}%</b>`)}
-    ${_altTR('층수 및 구성',`지상 ${A.floors}층 · ${A.corr}형`,`지상 ${B.floors}층 · ${B.corr}형`)}
-    ${_altTR('배치 특징',A.feat,B.feat)}
-    ${_altTR('환경 성능',A.envNote,B.envNote)}
-    ${_altTR('법정 주차(개략)',`자주식 ${A.park}대`,`자주식 ${B.park}대`)}
-    ${_altTR('용적 활용률',`한도의 ${(A.gfa/maxGFA*100).toFixed(0)}%`,`한도의 ${(B.gfa/maxGFA*100).toFixed(0)}%`)}
-    </tbody></table>`;
-
-  // ── §3 층별 공간 배치 ──
-  html+=`<div style="font-weight:700;margin:6px 0 8px">3. 층별 공간 배치 (Space Program)</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${[A,B].map(alt=>`
-      <div style="flex:1;min-width:280px;border:1px solid var(--border);border-radius:10px;padding:10px 12px">
-        <div style="font-weight:600;color:${alt.key==='A'?'var(--accent)':'var(--ok)'};margin-bottom:6px">${alt.title}</div>
-        <table style="width:100%;font-size:12px">
-        ${_altProgram(use,alt.floors).map(r=>`<tr><td style="width:74px;color:var(--muted);vertical-align:top;padding:2px 0"><b>${r[0]}</b></td><td style="padding:2px 0">${r[1]}</td></tr>`).join('')}
-        </table>
-      </div>`).join('')}
+  // ── §2 파레토 대안군 — 4 아키타입 다중목표 카드 ──
+  const objColor={분양:'#4a86e8', 일조조망:'#3aa76d', 외부공간:'#7a9e3a', 조형성:'#b0873a'};
+  const cardColor={A:'#4a86e8',B:'#3aa76d',C:'#7a9e3a',D:'#b0873a'};
+  const bestOf=(k)=>alts.reduce((m,a)=>a.scores[k]>m?a.scores[k]:m,0);
+  const scoreBar=(label,v,color,best)=>`<div style="display:flex;align-items:center;gap:5px;margin:1.5px 0">
+    <span style="width:52px;font-size:10px;color:var(--muted)">${label}</span>
+    <div style="flex:1;height:7px;background:var(--surf2);border-radius:4px;overflow:hidden">
+      <div style="width:${v}%;height:100%;background:${color}"></div></div>
+    <span style="width:30px;text-align:right;font-size:10px;font-weight:${v>=best?700:400};color:${v>=best?color:'var(--muted)'}">${v}${v>=best?'★':''}</span></div>`;
+  const massKo={single:'단일',court:'중정',wing:'ㄷ자분동',L:'L형'};
+  html+=`<div style="font-weight:700;margin:6px 0 4px">2. 파레토 대안군 — 다중목표 분석 (4 아키타입)</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">상충하는 목표(분양성 · 일조·조망 · 외부공간 · 조형성)에서 <b>서로 우세한 축이 다른</b> 대안군입니다(★=해당 목표 최우수). 하나의 정답이 아니라 우선순위에 맞게 선택하세요.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;margin-bottom:14px">`;
+  alts.forEach(a=>{
+    html+=`<div style="border:1px solid var(--border);border-top:3px solid ${cardColor[a.key]};border-radius:10px;padding:11px 12px;display:flex;flex-direction:column">
+      <div style="font-weight:700;color:${cardColor[a.key]};font-size:13px">${a.title}</div>
+      <div style="font-size:10.5px;color:var(--muted);margin-bottom:7px">${a.tag} · 종합 ${a.total}점</div>
+      <div style="font-size:11.5px;line-height:1.65;margin-bottom:8px">
+        건폐 <b>${a.bcr}%</b> · 용적 <b>${a.farUsed.toFixed(0)}%</b> · ${a.floors}층<br>
+        연면적 <b>${money(a.gfa)}</b>㎡ · 주차 ${a.park}대<br>
+        매스 <b>${massKo[a.massForm]||'단일'}</b> · ${a.corr}형</div>
+      ${scoreBar('분양성',a.scores.분양,objColor.분양,bestOf('분양'))}
+      ${scoreBar('일조·조망',a.scores.일조조망,objColor.일조조망,bestOf('일조조망'))}
+      ${scoreBar('외부공간',a.scores.외부공간,objColor.외부공간,bestOf('외부공간'))}
+      ${scoreBar('조형성',a.scores.조형성,objColor.조형성,bestOf('조형성'))}
+      <div style="font-size:10.5px;color:var(--muted);margin:8px 0;flex:1">${a.feat}</div>
+      <button class="btn bp btn-sm" style="width:100%" onclick="planApplyAlt('${a.key}')">이 대안 적용 →</button>
     </div>`;
-
-  // ── §4 JSON + 적용 버튼 ──
-  html+=`<div style="font-weight:700;margin:6px 0 8px">4. 3D 매스 · CAD 연동용 구조화 데이터 (JSON)</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap">
-    ${[A,B].map(alt=>{
-      const j={project_info:{site_area:Math.round(site*10)/10,building_area:Math.round(alt.fa*10)/10,total_floor_area:Math.round(alt.gfa*10)/10,floors:alt.floors,use:use},
-               mass_blocks:alt.mass.blocks};
-      const js=JSON.stringify(j,null,2);
-      return `<div style="flex:1;min-width:300px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-          <span style="font-weight:600;color:${alt.key==='A'?'var(--accent)':'var(--ok)'}">${alt.title}</span>
-          <button class="btn bp btn-sm" onclick="planApplyAlt('${alt.key}')">이 대안으로 평면·3D 생성 →</button>
-        </div>
-        <pre style="background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:9px;font-size:10.5px;max-height:220px;overflow:auto;white-space:pre;margin:0">${js.replace(/</g,'&lt;')}</pre>
-      </div>`;
-    }).join('')}
-    </div>
-    <div class="sb sb-warn" style="margin-top:12px;font-size:11px">두 대안 모두 <b>건폐율·용적률·층수·일조권 법정 한도 내</b>에서 산출된 개략안입니다. 실제 인허가는 지구단위계획·심의·구조/설비 협의를 거쳐 확정됩니다.</div>`;
+  });
+  html+=`</div>
+    <div class="sb sb-warn" style="margin-top:4px;font-size:11px">4개 대안 모두 <b>건폐율·용적률·층수·일조권 법정 한도 내</b> 개략안입니다. 매스 분절(중정·분동)은 허브형 용도(주거·근생 등)에 적용되며, 실제 인허가는 지구단위계획·심의·구조/설비 협의로 확정됩니다.</div>`;
 
   document.getElementById('alt-body').innerHTML=html;
   document.getElementById('alt-modal').classList.add('show');
@@ -6110,6 +6103,7 @@ function planApplyAlt(key){
   document.getElementById('pl-corridor').value=alt.corr;
   document.getElementById('pl-corecount').value='auto';
   document.getElementById('pl-fh').value=alt.fh;
+  const mf=document.getElementById('pl-massform'); if(mf&&alt.massForm) mf.value=alt.massForm;   // 배치 형식(중정·분동) 반영
   // 주차 대수 → 지하 층수 개략(층당 30대 가정, 최소 1)
   document.getElementById('pl-b').value=alt.park>0?Math.max(1,Math.ceil(alt.park/30)):0;
   S.plan.use=(S.plan._alts.use)||S.plan.use;
@@ -7492,7 +7486,7 @@ function _zSvgXY(svg,e){
   <div class="modal" style="max-width:960px">
     <button class="modal-x" onclick="closeModal('alt-modal')">×</button>
     <h2>계획설계 대안 자동 생성</h2>
-    <div class="sub">기획설계 데이터(대지·법규·프로그램)를 바탕으로 <b>법적 한도 내</b> 2개 대안을 도출합니다 — (A) 용적률 최대화안 · (B) 환경/공간 쾌적안</div>
+    <div class="sub">기획설계 데이터(대지·법규·프로그램)를 바탕으로 <b>법적 한도 내</b> 4개 아키타입을 다중목표로 평가합니다 — 분양극대 · 일조조망 · 중정친환경 · 랜드마크(분동)</div>
     <div id="alt-body"></div>
     <div style="text-align:right;margin-top:12px"><button class="btn bo btn-sm" onclick="closeModal('alt-modal')">닫기</button></div>
   </div>
