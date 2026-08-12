@@ -6017,16 +6017,8 @@ function planGenAlternatives(){
     mkAlt('D','랜드마크·분동형','분동·조형', bcrL*0.58, (hubUse?'wing':'single'), (use==='공동주택'?'편복도':'중심코어'), true, 0.95,
       '매스 분절(분동/ㄷ자)로 조형성·독창성 — 동 사이 외부공간'),
   ];
-  // 다중목표 점수(0~100): 분양성·일조조망·외부공간·조형성 (상충 → 파레토)
-  alts.forEach(a=>{
-    const sell=Math.round(Math.min(100, a.gfa/maxGFA*100));
-    const openBase=Math.round((1 - a.fa/site)*100);
-    const open=Math.max(0,Math.min(100, openBase + (a.massForm==='court'?18:a.massForm==='wing'?12:0)));
-    const light=Math.round(Math.min(100, 32 + (1-a.bcr/Math.max(1,bcrL))*55 + (a.solarStep?18:0) + Math.min(16,a.floors*2)));
-    const form=Math.round(Math.min(100, ({single:12,court:58,wing:78,L:66}[a.massForm]||12) + Math.min(30,a.floors*3)));
-    a.scores={분양:sell, 일조조망:light, 외부공간:open, 조형성:form};
-    a.total=Math.round((sell+light+open+form)/4);
-  });
+  // 다중목표 점수(0~100) + 조망 + 사업성 — 공통 평가기 _scoreAlt 사용
+  const ctxA=_altContext(); alts.forEach(a=>_scoreAlt(a,ctxA));
   S.plan._alts={use,site}; alts.forEach(a=>S.plan._alts[a.key]=a);
 
   // ── §1 요약 ──
@@ -6054,8 +6046,7 @@ function planGenAlternatives(){
       · <b>주요 법적 제약</b> ${constraints.join(' · ')}
     </div></div>`;
 
-  // ── §2 파레토 대안군 — 4 아키타입 다중목표 카드 ──
-  const objColor={분양:'#4a86e8', 일조조망:'#3aa76d', 외부공간:'#7a9e3a', 조형성:'#b0873a'};
+  // ── §2 파레토 대안군 — 4 아키타입 다중목표 카드 (조망·사업성 포함) ──
   const cardColor={A:'#4a86e8',B:'#3aa76d',C:'#7a9e3a',D:'#b0873a'};
   const bestOf=(k)=>alts.reduce((m,a)=>a.scores[k]>m?a.scores[k]:m,0);
   const scoreBar=(label,v,color,best)=>`<div style="display:flex;align-items:center;gap:5px;margin:1.5px 0">
@@ -6064,27 +6055,31 @@ function planGenAlternatives(){
       <div style="width:${v}%;height:100%;background:${color}"></div></div>
     <span style="width:30px;text-align:right;font-size:10px;font-weight:${v>=best?700:400};color:${v>=best?color:'var(--muted)'}">${v}${v>=best?'★':''}</span></div>`;
   const massKo={single:'단일',court:'중정',wing:'ㄷ자분동',L:'L형'};
-  html+=`<div style="font-weight:700;margin:6px 0 4px">2. 파레토 대안군 — 다중목표 분석 (4 아키타입)</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">상충하는 목표(분양성 · 일조·조망 · 외부공간 · 조형성)에서 <b>서로 우세한 축이 다른</b> 대안군입니다(★=해당 목표 최우수). 하나의 정답이 아니라 우선순위에 맞게 선택하세요.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;margin-bottom:14px">`;
-  alts.forEach(a=>{
+  html+=`<div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 4px">
+      <span style="font-weight:700">2. 파레토 대안군 — 다중목표 분석 (4 아키타입)</span>
+      <button class="btn bo btn-sm" style="font-size:11px" onclick="planGAExplore()" title="유전알고리즘(NSGA-II)으로 개체군 60×18세대 진화 → 파레토 최적 대안군 탐색">🧬 GA 정밀 탐색 (수십안)</button></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">상충 목표(분양·일조·조망·외부공간·조형·사업성)에서 <b>서로 우세한 축이 다른</b> 대안군(★=최우수). 더 다양한 탐색은 <b>GA 정밀 탐색</b>.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:10px;margin-bottom:14px">`;
+  alts.forEach(a=>{ const f=a.feas;
     html+=`<div style="border:1px solid var(--border);border-top:3px solid ${cardColor[a.key]};border-radius:10px;padding:11px 12px;display:flex;flex-direction:column">
       <div style="font-weight:700;color:${cardColor[a.key]};font-size:13px">${a.title}</div>
       <div style="font-size:10.5px;color:var(--muted);margin-bottom:7px">${a.tag} · 종합 ${a.total}점</div>
-      <div style="font-size:11.5px;line-height:1.65;margin-bottom:8px">
+      <div style="font-size:11.5px;line-height:1.6;margin-bottom:7px">
         건폐 <b>${a.bcr}%</b> · 용적 <b>${a.farUsed.toFixed(0)}%</b> · ${a.floors}층<br>
-        연면적 <b>${money(a.gfa)}</b>㎡ · 주차 ${a.park}대<br>
-        매스 <b>${massKo[a.massForm]||'단일'}</b> · ${a.corr}형</div>
-      ${scoreBar('분양성',a.scores.분양,objColor.분양,bestOf('분양'))}
-      ${scoreBar('일조·조망',a.scores.일조조망,objColor.일조조망,bestOf('일조조망'))}
-      ${scoreBar('외부공간',a.scores.외부공간,objColor.외부공간,bestOf('외부공간'))}
-      ${scoreBar('조형성',a.scores.조형성,objColor.조형성,bestOf('조형성'))}
-      <div style="font-size:10.5px;color:var(--muted);margin:8px 0;flex:1">${a.feat}</div>
+        연면적 <b>${money(a.gfa)}</b>㎡ · 주차 ${a.park}대 · 매스 <b>${massKo[a.massForm]||'단일'}</b></div>
+      ${scoreBar('분양성',a.scores.분양,'#4a86e8',bestOf('분양'))}
+      ${scoreBar('일조',a.scores.일조,'#3aa76d',bestOf('일조'))}
+      ${scoreBar('조망',a.scores.조망,'#38a0c0',bestOf('조망'))}
+      ${scoreBar('외부공간',a.scores.외부공간,'#7a9e3a',bestOf('외부공간'))}
+      ${scoreBar('조형성',a.scores.조형성,'#b0873a',bestOf('조형성'))}
+      <div style="font-size:10.5px;background:var(--surf2);border-radius:6px;padding:4px 7px;margin:7px 0">
+        💰 총사업비 <b>${f.total}</b>억 · 분양 <b>${f.revenue}</b>억 · <b style="color:${f.margin>=5?'var(--ok)':f.margin>=0?'var(--warn)':'var(--err)'}">이익 ${f.profit>=0?'+':''}${f.profit}억(${f.margin}%)</b></div>
+      <div style="font-size:10.5px;color:var(--muted);margin:2px 0 8px;flex:1">${a.feat}</div>
       <button class="btn bp btn-sm" style="width:100%" onclick="planApplyAlt('${a.key}')">이 대안 적용 →</button>
     </div>`;
   });
   html+=`</div>
-    <div class="sb sb-warn" style="margin-top:4px;font-size:11px">4개 대안 모두 <b>건폐율·용적률·층수·일조권 법정 한도 내</b> 개략안입니다. 매스 분절(중정·분동)은 허브형 용도(주거·근생 등)에 적용되며, 실제 인허가는 지구단위계획·심의·구조/설비 협의로 확정됩니다.</div>`;
+    <div class="sb sb-warn" style="margin-top:4px;font-size:11px">4개 대안 모두 <b>법정 한도 내</b> 개략안. 사업성은 공시지가·표준공사비·지역분양가 기반 <b>추정치</b>(억원, 부가세·금융비 제외). 매스 분절은 허브형 용도에 적용됩니다.</div>`;
 
   document.getElementById('alt-body').innerHTML=html;
   document.getElementById('alt-modal').classList.add('show');
@@ -6112,6 +6107,169 @@ function planApplyAlt(key){
   planCtrl();           // 평면형식·코어·지하 반영 + 재계산
   closeModal('alt-modal');
   showSt('run-status','sb-ok',`계획설계 ${alt.title} 적용 — 평면 생성됨 (필요 시 3D 반영 버튼 사용)`,false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  대안 평가 공통(다중목표+조망+사업성) + NSGA-II형 유전알고리즘 대안 탐색
+// ═══════════════════════════════════════════════════════════════════════════
+function _altContext(){
+  const d=S.checkResult; if(!d||!(d.site_area>0&&d.max_ground_area>0)) return null;
+  const use=(document.getElementById('pl-use')||{}).value||d.use_type||'공동주택';
+  const fh=_altFH(use);
+  return {d,use,zone:d.zone,region:d.region||'',site:d.site_area,bcrL:d.bcr_limit,farL:d.far_limit,
+    maxGnd:d.max_ground_area,maxGFA:d.max_total_area,fh,legalMax:_altLegalFloors(fh)};
+}
+// 조망 점수 — 높이(층수)+주변밀집도(용도지역)+매스분절
+function _altView(a,ctx){
+  const h=Math.min(42, a.floors/Math.max(1,ctx.legalMax)*40+8);
+  const dense=/중심상업|일반상업|근린상업|준주거/.test(ctx.zone)?4:/전용주거/.test(ctx.zone)?28:15;
+  const form={single:6,court:12,wing:17,L:12}[a.massForm]||6;
+  return Math.round(Math.min(100,h+dense+form));
+}
+// 대안별 공사비·사업성(억원) — 기존 상수 재사용
+function _altFeas(a,ctx){
+  const rf=(typeof REGION_PRICE_FACTOR!=='undefined'&&REGION_PRICE_FACTOR[ctx.region])||(ctx.region==='서울특별시'?1:0.45);
+  const eff=(EFF_BY_USE[ctx.use]||65)/100, cRate=CONST_COST[ctx.use]||260;
+  const heightPrem=1+Math.max(0,a.floors-5)*0.016;           // 고층 구조·설비·공기 할증(층당 1.6%)
+  const direct=(a.gfa*cRate*0.9 + a.fa*cRate*0.75)*heightPrem;// 반복층+1회성(건축면적)+고층할증
+  const construct=Math.round(direct*1.42/10000*10)/10;       // 간접+설계+부대+예비 → 억원
+  const land=Math.round(ctx.site*(ZONE_LAND_PRICE[ctx.zone]||3000)*rf/10000*10)/10;
+  const total=Math.round((construct+land)*10)/10;
+  const revenue=Math.round(a.gfa*eff*(ZONE_SALE_PRICE[ctx.zone]||4000)*rf/10000*10)/10;
+  const profit=Math.round((revenue-total)*10)/10;
+  const margin=total>0?Math.round(profit/total*1000)/10:0;
+  return {construct,land,total,revenue,profit,margin,eff:Math.round(eff*100)};
+}
+// 다중목표 점수(0~100) + 사업성 + GA 목표벡터
+function _scoreAlt(a,ctx){
+  // 분양성 = 용적 활용 × 판 효율(건폐↑=코어손실↓) × 매스 효율(중정/분동 void는 분양면적 손실) → 트레이드오프
+  const voidPen={single:1, court:0.85, wing:0.9, L:0.93}[a.massForm]||1;
+  const eff=(0.68+0.32*a.bcr/Math.max(1,ctx.bcrL))*voidPen;
+  const sell=Math.round(Math.min(100,a.gfa/ctx.maxGFA*100*eff));
+  const openBase=Math.round((1-a.fa/ctx.site)*100);
+  const open=Math.max(0,Math.min(100,openBase+(a.massForm==='court'?18:a.massForm==='wing'?12:0)));
+  const light=Math.round(Math.min(100,32+(1-a.bcr/Math.max(1,ctx.bcrL))*55+(a.solarStep?18:0)));
+  const view=_altView(a,ctx);
+  const form=Math.round(Math.min(100,({single:12,court:58,wing:78,L:66}[a.massForm]||12)+Math.min(30,a.floors*3)));
+  a.feas=_altFeas(a,ctx);
+  const biz=Math.round(Math.max(0,Math.min(100,50+a.feas.margin*1.5)));
+  a.scores={분양:sell,일조:light,조망:view,외부공간:open,조형성:form,사업성:biz};
+  a.objs=[sell,Math.round((light+view)/2),open,form,biz];   // GA 5목표: 분양·환경·외부·조형·사업성
+  a.total=Math.round((sell+light+view+open+form+biz)/6);
+  return a;
+}
+function _altFromGenome(g,ctx){
+  const bcr=Math.max(15,Math.min(ctx.bcrL,Math.round(g.bcr)));
+  const fa=Math.min(ctx.maxGnd,ctx.site*bcr/100);
+  const floors=Math.max(1,Math.min(ctx.legalMax,Math.round(g.floors)));
+  const gfa=Math.min(ctx.maxGFA,fa*floors);
+  const hubUse=/단독|공동|근린|판매|미술|박물|도서/.test(ctx.use);
+  return _scoreAlt({bcr,fa,floors,gfa,farUsed:gfa/ctx.site*100,massForm:hubUse?g.massForm:'single',
+    solarStep:g.step,fh:ctx.fh,corr:g.corr,park:_altParking(ctx.use,gfa),genome:g},ctx);
+}
+// NSGA-II: 비지배 판정·정렬·혼잡거리
+function _dominates(x,y){ let ge=true,gt=false; for(let i=0;i<x.length;i++){ if(x[i]<y[i])ge=false; if(x[i]>y[i])gt=true; } return ge&&gt; }
+function _nonDomSort(pop){
+  const N=pop.length, Sp=[],n=new Array(N).fill(0),rank=new Array(N).fill(0),fronts=[[]];
+  for(let p=0;p<N;p++){ Sp[p]=[];
+    for(let q=0;q<N;q++){ if(p===q)continue;
+      if(_dominates(pop[p].objs,pop[q].objs)) Sp[p].push(q);
+      else if(_dominates(pop[q].objs,pop[p].objs)) n[p]++; }
+    if(n[p]===0){ rank[p]=0; fronts[0].push(p); } }
+  let i=0; while(fronts[i]&&fronts[i].length){ const nx=[];
+    fronts[i].forEach(p=>Sp[p].forEach(q=>{ if(--n[q]===0){ rank[q]=i+1; nx.push(q); } }));
+    i++; if(nx.length) fronts.push(nx); }
+  return {fronts,rank};
+}
+function _crowding(pop,idxs){ const m=pop[0].objs.length, cd={}; idxs.forEach(i=>cd[i]=0);
+  for(let k=0;k<m;k++){ const s=[...idxs].sort((a,b)=>pop[a].objs[k]-pop[b].objs[k]);
+    if(s.length<2)break; cd[s[0]]=cd[s[s.length-1]]=Infinity;
+    const rng=(pop[s[s.length-1]].objs[k]-pop[s[0]].objs[k])||1;
+    for(let j=1;j<s.length-1;j++) cd[s[j]]+=(pop[s[j+1]].objs[k]-pop[s[j-1]].objs[k])/rng; }
+  return cd;
+}
+// 유전알고리즘 대안 탐색 → 파레토 프론트
+function planGAExplore(){
+  const ctx=_altContext(); if(!ctx){ alert('먼저 필지 검색 후 [법규 검토]를 실행하세요.'); return; }
+  const hubUse=/단독|공동|근린|판매|미술|박물|도서/.test(ctx.use);
+  const forms=hubUse?['single','court','wing','L']:['single'];
+  const corrs=(ctx.use==='공동주택')?['중복도','편복도','중심코어']:['중심코어','오픈플랜','편복도'];
+  const rnd=(a,b)=>a+Math.random()*(b-a), pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+  const randG=()=>({bcr:rnd(15,ctx.bcrL),floors:Math.round(rnd(1,ctx.legalMax)),massForm:pick(forms),step:Math.random()<0.5,corr:pick(corrs)});
+  const POP=60, GEN=18;
+  let pop=Array.from({length:POP},()=>_altFromGenome(randG(),ctx));
+  const cross=(x,y)=>({bcr:Math.random()<0.5?x.bcr:y.bcr,floors:Math.random()<0.5?x.floors:y.floors,massForm:Math.random()<0.5?x.massForm:y.massForm,step:Math.random()<0.5?x.step:y.step,corr:Math.random()<0.5?x.corr:y.corr});
+  const mut=g=>{ const h=Object.assign({},g);
+    if(Math.random()<0.3) h.bcr=Math.max(15,Math.min(ctx.bcrL,h.bcr+rnd(-10,10)));
+    if(Math.random()<0.3) h.floors=Math.max(1,Math.min(ctx.legalMax,h.floors+Math.round(rnd(-2,2))));
+    if(Math.random()<0.25) h.massForm=pick(forms);
+    if(Math.random()<0.2) h.step=!h.step; if(Math.random()<0.15) h.corr=pick(corrs);
+    return h; };
+  for(let gen=0;gen<GEN;gen++){
+    const {rank}=_nonDomSort(pop);
+    const cd=_crowding(pop, pop.map((_,i)=>i));
+    const tour=()=>{ const a=Math.floor(Math.random()*pop.length),b=Math.floor(Math.random()*pop.length);
+      return (rank[a]<rank[b]||(rank[a]===rank[b]&&(cd[a]||0)>(cd[b]||0)))?a:b; };
+    const off=[]; for(let k=0;k<POP;k++) off.push(_altFromGenome(mut(cross(pop[tour()].genome,pop[tour()].genome)),ctx));
+    const comb=pop.concat(off); const {fronts:f2}=_nonDomSort(comb); const next=[];
+    for(const fr of f2){ if(next.length+fr.length<=POP){ fr.forEach(i=>next.push(comb[i])); }
+      else { const cdf=_crowding(comb,fr); fr.sort((a,b)=>(cdf[b]===Infinity?1e9:cdf[b]||0)-(cdf[a]===Infinity?1e9:cdf[a]||0));
+        for(const i of fr){ if(next.length>=POP)break; next.push(comb[i]); } break; } }
+    pop=next;
+  }
+  const {fronts}=_nonDomSort(pop); const cd0=_crowding(pop,fronts[0]);
+  const ordered=[...fronts[0]].sort((a,b)=>(cd0[b]===Infinity?1e9:cd0[b]||0)-(cd0[a]===Infinity?1e9:cd0[a]||0));
+  const front=ordered.slice(0,10).map(i=>pop[i]).sort((a,b)=>b.scores.분양-a.scores.분양);
+  front.forEach((a,i)=>{ a.key='G'+i; a.title='GA안 '+(i+1); });
+  S.plan._alts={use:ctx.use,site:ctx.site}; front.forEach(a=>S.plan._alts[a.key]=a);
+  S.plan._ga={front,ctx,popFront:fronts[0].length};
+  _renderGA(front,ctx);
+}
+function _renderGA(front,ctx){
+  const money=n=>Math.round(n).toLocaleString();
+  const d=ctx.d;
+  // ── 산점도: X=분양성, Y=환경(일조·조망), 색=조형성, 크기=사업성 ──
+  const W=520,H=250,pad=34;
+  const env=a=>Math.round((a.scores.일조+a.scores.조망)/2);
+  const sx=v=>pad+(v/100)*(W-2*pad), sy=v=>H-pad-(v/100)*(H-2*pad);
+  let dots='';
+  front.forEach((a,i)=>{ const x=sx(a.scores.분양),y=sy(env(a));
+    const r=4+a.scores.사업성/22, hue=200-a.scores.조형성*1.4;
+    dots+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="hsl(${hue},65%,55%)" fill-opacity="0.78" stroke="#fff" stroke-width="1"/>`
+      +`<text x="${x.toFixed(1)}" y="${(y-r-2).toFixed(1)}" font-size="9" text-anchor="middle" fill="#445">${i+1}</text>`; });
+  const axis=`<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#aab" stroke-width="1"/>
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="#aab" stroke-width="1"/>
+    <text x="${W/2}" y="${H-6}" font-size="11" text-anchor="middle" fill="#667">분양성(용적 활용) →</text>
+    <text x="14" y="${H/2}" font-size="11" text-anchor="middle" fill="#667" transform="rotate(-90 14 ${H/2})">← 환경(일조·조망)</text>`;
+  const scatter=`<svg width="100%" viewBox="0 0 ${W} ${H}" style="background:var(--surf2);border:1px solid var(--border);border-radius:10px">${axis}${dots}</svg>`;
+
+  // ── 프론트 리스트(카드) ──
+  const massKo={single:'단일',court:'중정',wing:'ㄷ자분동',L:'L형'};
+  const bar=(v,c)=>`<div style="display:inline-block;width:38px;height:6px;background:var(--surf2);border-radius:3px;vertical-align:middle;overflow:hidden"><div style="width:${v}%;height:100%;background:${c}"></div></div>`;
+  let cards='';
+  front.forEach((a,i)=>{ const f=a.feas;
+    cards+=`<div style="border:1px solid var(--border);border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b style="color:var(--accent)">${i+1}. ${massKo[a.massForm]}·${a.floors}층</b>
+        <span style="font-size:10px;color:var(--muted)">종합 ${a.total}</span></div>
+      <div style="font-size:11px;color:var(--muted)">건폐 ${a.bcr}% · 용적 ${a.farUsed.toFixed(0)}% · 연면적 ${money(a.gfa)}㎡</div>
+      <div style="font-size:10.5px;line-height:1.75;margin:2px 0">
+        분양 ${bar(a.scores.분양,'#4a86e8')} 일조 ${bar(a.scores.일조,'#3aa76d')} 조망 ${bar(a.scores.조망,'#38a0c0')} 외부 ${bar(a.scores.외부공간,'#7a9e3a')} 조형 ${bar(a.scores.조형성,'#b0873a')}</div>
+      <div style="font-size:11px;background:var(--surf2);border-radius:6px;padding:4px 7px;margin:2px 0">
+        💰 공사비 <b>${f.construct}</b>억 · 총사업비 <b>${f.total}</b>억 · 분양수입 <b>${f.revenue}</b>억 · <b style="color:${f.margin>=5?'var(--ok)':f.margin>=0?'var(--warn)':'var(--err)'}">이익 ${f.profit>=0?'+':''}${f.profit}억 (${f.margin}%)</b></div>
+      <button class="btn bp btn-sm" style="margin-top:3px" onclick="planApplyAlt('${a.key}')">이 대안 적용 →</button>
+    </div>`; });
+
+  let html=`<div style="background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;line-height:1.8">
+    <b>🧬 유전알고리즘(NSGA-II형) 대안 탐색</b> — 파라메트릭 유전자(건폐·층수·매스형태·향)를 개체군 60 × 18세대로 진화시켜, 상충 목표(분양·일조·조망·외부공간·조형·사업성)에서 <b>서로 지배되지 않는 파레토 최적 ${front.length}개</b>를 도출했습니다.<br>
+    · 대지 ${money(ctx.site)}㎡ · ${d.zone} · ${ctx.use} · 용적한도 ${ctx.farL}% · 법정최고 ${ctx.legalMax>=99?'—':ctx.legalMax+'층'}</div>`;
+  html+=`<div style="font-weight:700;margin:4px 0 6px">파레토 프론트 (분양성 ↔ 환경 트레이드오프)</div>${scatter}
+    <div style="font-size:10.5px;color:var(--muted);margin:4px 0 12px">점 크기=사업성(이익률) · 색: 파랑→주황=조형성↑ · 번호=아래 대안</div>`;
+  html+=`<div style="font-weight:700;margin:4px 0 6px">파레토 최적 대안군 (${front.length})</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:9px">${cards}</div>
+    <div class="sb sb-warn" style="margin-top:12px;font-size:11px">사업성은 공시지가·표준공사비·지역 분양가 기반 <b>개략 추정</b>(억원)이며 부가세·금융비 제외. 매스 분절(중정·분동)은 허브형 용도에 적용됩니다.</div>`;
+  document.getElementById('alt-body').innerHTML=html;
+  document.getElementById('alt-modal').classList.add('show');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
