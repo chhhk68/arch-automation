@@ -8,12 +8,13 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f4f7fc;--surf:#ffffff;--surf2:#edf1f9;--surf3:#e2e9f5;
-  --border:#c8d3e8;--accent:#3f7de8;--ok:#18a060;--warn:#c07800;--err:#d42828;
-  --txt:#1a2540;--muted:#4c6080;--r:7px;
+  --bg:#f4f7fc;--surf:#ffffff;--surf2:#eef2fa;--surf3:#e0e7f4;
+  --border:#c5d1e6;--accent:#3f7de8;--ok:#18a060;--warn:#b87400;--err:#d42828;
+  --txt:#17223c;--muted:#42557a;--r:7px;
 }
 html,body{height:100%;overflow:hidden}
-body{font-family:'Segoe UI',-apple-system,sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column}
+body{font-family:'Segoe UI',-apple-system,sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column;
+     -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 
 .hd{display:flex;align-items:center;padding:9px 18px;background:var(--surf);
     border-bottom:1px solid var(--border);flex-shrink:0;gap:12px;
@@ -310,6 +311,40 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .zvtx{fill:#2f6df6;stroke:#fff;stroke-width:.14;cursor:grab}
 .zvtx:hover{fill:#1b52c9}
 .zdim{fill:#7a869c;font-weight:600}
+
+/* ── 조닝 워크스페이스 재설계 (가독성·직관성 강화) ───────────────────────────── */
+/* 접이식 섹션 — 우측 컨트롤을 정리해 한눈에 */
+.zsec{border:1px solid var(--border);border-radius:9px;background:var(--surf);margin-bottom:9px;overflow:hidden}
+.zsec>summary{list-style:none;cursor:pointer;padding:9px 12px;font-size:12px;font-weight:700;color:var(--txt);
+  display:flex;align-items:center;gap:7px;background:var(--surf2);user-select:none}
+.zsec>summary::-webkit-details-marker{display:none}
+.zsec>summary::before{content:'▸';font-size:10px;color:var(--muted);transition:transform .15s}
+.zsec[open]>summary::before{transform:rotate(90deg)}
+.zsec>summary .zsec-ic{font-size:13px}
+.zsec>summary .zsec-tag{margin-left:auto;font-weight:500;font-size:10.5px;color:var(--muted)}
+.zsec-body{padding:11px 12px}
+/* 연계율·동선 미터 — 조닝 품질을 시각적으로 */
+.zqual{display:flex;flex-direction:column;gap:9px;padding:11px 12px;border:1px solid var(--border);
+  border-radius:9px;background:var(--surf);margin-bottom:9px}
+.zmeter-row{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.zmeter-row .zm-lbl{width:62px;flex-shrink:0;color:var(--muted);font-weight:600}
+.zmeter-row .zm-val{width:auto;flex-shrink:0;font-weight:700;font-variant-numeric:tabular-nums}
+.zbar{flex:1;height:8px;border-radius:100px;background:var(--surf3);overflow:hidden}
+.zbar>i{display:block;height:100%;border-radius:100px;transition:width .3s ease}
+.zbar-ok>i{background:linear-gradient(90deg,#3ecf8e,#18a060)}
+.zbar-warn>i{background:linear-gradient(90deg,#f2c14e,#c07800)}
+.zbar-err>i{background:linear-gradient(90deg,#f28b82,#d42828)}
+/* 존(zone) 범례 칩 */
+.zzone-legend{display:flex;flex-wrap:wrap;gap:5px 8px;margin-top:9px}
+.zzone-legend .zz{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
+.zzone-legend .zz i{width:11px;height:11px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.08)}
+/* 편집 툴바 — 이동·크기 */
+.ztool-grid{display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap}
+.ztool-cap{font-size:10px;color:var(--muted);text-align:center;margin-top:7px;line-height:1.5}
+/* 실 목록 테이블 가독성 */
+#pl-zprog td,#pl-zprog th{padding:4px 5px}
+#pl-zprog tr:not(:first-child){border-top:1px solid var(--surf3)}
+.zfloor-bar{gap:4px}
 </style>
 </head>
 <body>
@@ -1047,95 +1082,106 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
        <div style="background:#f2f5fb;border:1px solid var(--border);border-radius:10px;padding:12px">
          <svg id="pl-zsvg" style="width:100%;display:block"></svg>
        </div>
-       <div id="pl-zlegend" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--muted)"></div>
-       <div class="sb sb-warn" style="margin-top:10px;font-size:11px">
-         실을 <b>마우스로 드래그</b>해 옮기세요 — <b>드래그한 실만</b> 이동하며 나머지는 그대로입니다(빈 곳은 공용·홀로 자동 정리). 코어도 이동 가능. 선택 후 <b>↑↓←→</b>·<b>크기</b> 버튼으로 미세 조정.
-       </div>
-       <div class="sb" style="margin-top:8px;font-size:10.5px;color:var(--muted);background:var(--surf2);border:1px solid var(--border)">
-         <b>적용 법규(초안 근거)</b> · 건폐율·용적률(한도 내 자동) · 대지 이격거리(치수 표기) · <b>정북일조 사선제한</b>(§86, 주거지역 상층부 후퇴 자동 반영) · 동선 분리(보행·차량). ※ 도로사선제한은 2015년 폐지(가로구역별 최고높이·일조로 대체). 도로 모퉁이 필지는 <b>가각전제</b>를 정점 편집으로 반영하세요.
-       </div>
+       <div id="pl-zlegend" style="display:flex;gap:10px 14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted)"></div>
+       <div style="margin-top:9px;font-size:11px;color:var(--muted)">💡 실을 <b>드래그</b>해 이동 — 드래그한 실만 움직이고 빈 곳은 공용·홀로 자동 정리됩니다. 우측 도구로 미세 조정·자동배치.</div>
+       <details class="zsec" style="margin-top:9px">
+         <summary style="font-size:11px"><span class="zsec-ic">⚖️</span> 적용 법규(초안 근거)</summary>
+         <div class="zsec-body" style="font-size:10.5px;color:var(--muted);line-height:1.6">
+           건폐율·용적률(한도 내 자동) · 대지 이격거리(치수 표기) · <b>정북일조 사선제한</b>(§86, 주거지역 상층부 후퇴 자동 반영) · 동선 분리(보행·차량).<br>※ 도로사선제한은 2015년 폐지(가로구역별 최고높이·일조로 대체). 도로 모퉁이 필지는 <b>가각전제</b>를 정점 편집으로 반영하세요.
+         </div>
+       </details>
      </div>
-     <div class="panel zedit" style="flex:0 0 288px;max-width:288px;display:flex;flex-direction:column;min-height:0">
+     <div class="panel zedit" style="flex:0 0 316px;max-width:316px;display:flex;flex-direction:column;min-height:0">
        <!-- 층 탭 (항상 상단 고정) -->
        <div class="zfloor-bar">
          <span class="lbl" style="margin:0 6px 0 0">층</span>
          <div id="pl-zfloorsel" style="display:flex;flex-wrap:wrap;gap:4px"></div>
        </div>
+       <!-- 조닝 품질 미터 — 연계율·동선을 한눈에 -->
+       <div class="zqual" id="pl-zqual"></div>
        <div id="pl-zsel" class="sb sb-ok" style="display:none;font-size:11.5px;margin-bottom:8px"></div>
-       <!-- 이동/크기 조정 -->
-       <div style="display:flex;gap:12px;justify-content:center;margin:2px 0 8px">
-         <div style="display:grid;grid-template-columns:repeat(3,30px);gap:4px">
-           <div></div><button class="znav-btn" onclick="planZMove(0,-1)">↑</button><div></div>
-           <button class="znav-btn" onclick="planZMove(-1,0)">←</button>
-           <button class="znav-btn" onclick="planZMove(0,0)" title="이 층 자동 재배치">⟲</button>
-           <button class="znav-btn" onclick="planZMove(1,0)">→</button>
-           <div></div><button class="znav-btn" onclick="planZMove(0,1)">↓</button><div></div>
+       <!-- 스크롤 영역 -->
+       <div style="flex:1;overflow-y:auto;min-height:0;padding-right:2px">
+       <!-- ① 편집 도구 (항상 열림) -->
+       <details class="zsec" open>
+         <summary><span class="zsec-ic">✏️</span> 실 편집 <span class="zsec-tag">이동·크기·보관함</span></summary>
+         <div class="zsec-body">
+           <div class="ztool-grid">
+             <div style="display:grid;grid-template-columns:repeat(3,32px);gap:4px">
+               <div></div><button class="znav-btn" onclick="planZMove(0,-1)">↑</button><div></div>
+               <button class="znav-btn" onclick="planZMove(-1,0)">←</button>
+               <button class="znav-btn" onclick="planZMove(0,0)" title="이 층 자동 재배치">⟲</button>
+               <button class="znav-btn" onclick="planZMove(1,0)">→</button>
+               <div></div><button class="znav-btn" onclick="planZMove(0,1)">↓</button><div></div>
+             </div>
+             <div style="display:grid;grid-template-columns:repeat(2,32px);gap:4px;align-content:center">
+               <button class="znav-btn" onclick="planZSize(1,0)" title="폭 +">⇥</button>
+               <button class="znav-btn" onclick="planZSize(-1,0)" title="폭 −">⇤</button>
+               <button class="znav-btn" onclick="planZSize(0,1)" title="높이 +">⤓</button>
+               <button class="znav-btn" onclick="planZSize(0,-1)" title="높이 −">⤒</button>
+             </div>
+           </div>
+           <div class="ztool-cap">실 클릭 → <b>드래그</b>로 이동 · <b>←↑↓→</b> 미세이동 · <b>⇥⇤⤓⤒</b> 크기 · <b>⟲</b> 자동정리</div>
+           <div style="display:flex;gap:6px;align-items:center;margin-top:9px">
+             <button class="btn bo btn-sm" style="flex:1" onclick="planZAuto()">🔀 동선 자동배치</button>
+             <button class="btn bo btn-sm" style="flex:1" onclick="planZPull()" title="선택한 실을 보관함으로 빼냅니다(빈 곳은 공용·홀로)">➖ 실 빼기</button>
+           </div>
+           <div id="pl-ztray" style="display:none;background:var(--surf2);border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px;font-size:11px"></div>
+           <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+             <label class="lbl" style="margin:0">주 진입</label>
+             <select id="pl-zentry" onchange="planZEntryChange()" style="flex:1;font-size:11px" title="인접 도로 방향으로 자동 설정됨(수동 변경 가능)">
+               <option value="south">남측 진입</option><option value="north">북측 진입</option>
+               <option value="east">동측 진입</option><option value="west">서측 진입</option>
+             </select>
+           </div>
          </div>
-         <div style="display:grid;grid-template-columns:repeat(2,30px);gap:4px;align-content:center">
-           <button class="znav-btn" onclick="planZSize(1,0)" title="폭 +">⇥</button>
-           <button class="znav-btn" onclick="planZSize(-1,0)" title="폭 −">⇤</button>
-           <button class="znav-btn" onclick="planZSize(0,1)" title="높이 +">⤓</button>
-           <button class="znav-btn" onclick="planZSize(0,-1)" title="높이 −">⤒</button>
+       </details>
+       <!-- ② 스토리 → 조닝 -->
+       <details class="zsec">
+         <summary><span class="zsec-ic">📖</span> 건축물 스토리 <span class="zsec-tag">문장 → 조닝</span></summary>
+         <div class="zsec-body">
+           <textarea id="pl-zstory" rows="2" placeholder="예) 1층 카페, 재택 서재 2개, 3자녀 남향 주택"
+             style="width:100%;font-size:11.5px;resize:vertical;line-height:1.4" oninput="var m=document.getElementById('pl-story');if(m)m.value=this.value;S.plan.story=this.value"></textarea>
+           <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px">
+             <button class="btn bp btn-sm" style="font-size:11px;flex:1" onclick="planStoryApplyFromZoning()">🔄 반영·새로고침</button>
+             <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer" title="켜면 GPT/Gemini로 문장 해석">
+               <input type="checkbox" id="pl-zstory-ai" onchange="var m=document.getElementById('pl-story-ai');if(m)m.checked=this.checked"> AI</label>
+             <button class="btn bo btn-sm" style="font-size:11px" onclick="planStoryClear()">해제</button>
+           </div>
+           <div id="pl-zstory-note" style="font-size:10.5px;color:var(--muted);margin-top:5px"></div>
          </div>
-       </div>
-       <div style="font-size:10px;color:var(--muted);text-align:center;margin-bottom:8px">←↑↓→ 이동 · ⇥⇤⤓⤒ 크기 · ⟲ 자동정리</div>
-       <!-- 퍼즐식 편집: 선택 실을 보관함으로 빼냈다가 다시 배치 -->
-       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-         <button class="btn bo btn-sm" style="flex:1" onclick="planZPull()" title="선택한 실을 보관함으로 빼냅니다(빈 곳은 공용·홀로)">➖ 실 빼기(보관함)</button>
-       </div>
-       <div id="pl-ztray" style="display:none;background:var(--surf2);border:1px dashed var(--border);border-radius:8px;padding:6px;margin-bottom:8px;font-size:11px"></div>
-       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-         <button class="btn bo btn-sm" style="flex:1" onclick="planZAuto()">동선 자동배치</button>
-         <select id="pl-zentry" onchange="planZEntryChange()" style="flex:1;font-size:11px" title="인접 도로 방향으로 자동 설정됨(수동 변경 가능)">
-           <option value="south">남측 진입</option><option value="north">북측 진입</option>
-           <option value="east">동측 진입</option><option value="west">서측 진입</option>
-         </select>
-       </div>
-       <!-- 스토리 반영(조닝 탭 직접) — 용도설정 탭과 동기화 -->
-       <div class="tbox" style="margin-bottom:8px">
-         <div class="tbox-h">📖 건축물 스토리 → 조닝</div>
-         <textarea id="pl-zstory" rows="2" placeholder="예) 1층 카페, 재택 서재 2개, 3자녀 남향 주택"
-           style="width:100%;font-size:11px;resize:vertical;line-height:1.35;margin:2px 0" oninput="var m=document.getElementById('pl-story');if(m)m.value=this.value;S.plan.story=this.value"></textarea>
-         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-           <button class="btn bp btn-sm" style="font-size:11px;flex:1" onclick="planStoryApplyFromZoning()">🔄 스토리 반영·새로고침</button>
-           <label style="font-size:10.5px;display:flex;align-items:center;gap:3px;cursor:pointer" title="켜면 GPT/Gemini로 문장 해석">
-             <input type="checkbox" id="pl-zstory-ai" onchange="var m=document.getElementById('pl-story-ai');if(m)m.checked=this.checked"> AI</label>
-           <button class="btn bo btn-sm" style="font-size:10.5px" onclick="planStoryClear()">해제</button>
-         </div>
-         <div id="pl-zstory-note" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
-       </div>
-       <!-- 배치 형식(매스): 단일/중정/ㄷ자(분동)/L -->
-       <div class="tbox" style="margin-bottom:8px">
-         <div class="tbox-h">배치 형식 (매스)</div>
-         <div style="display:flex;gap:6px;align-items:center;padding:2px 0">
-           <select id="pl-massform" onchange="planZAutoSafe()" style="flex:1;font-size:11px" title="건축면적을 직사각 틀에서 벗어나게 — 중정·분동·L형">
+       </details>
+       <!-- ③ 매스·형상 -->
+       <details class="zsec">
+         <summary><span class="zsec-ic">🏛️</span> 매스·건축라인 <span class="zsec-tag">배치형식·형상</span></summary>
+         <div class="zsec-body">
+           <label class="lbl" style="margin:0 0 4px">배치 형식 (매스)</label>
+           <select id="pl-massform" onchange="planZAutoSafe()" style="width:100%;font-size:11.5px" title="건축면적을 직사각 틀에서 벗어나게 — 중정·분동·L형">
              <option value="single">단일동 (직사각)</option>
              <option value="court">중정형 (중앙 마당)</option>
              <option value="wing">ㄷ자·분동 (두 날개)</option>
              <option value="L">L형 (모서리 공지)</option>
            </select>
+           <div style="font-size:10px;color:var(--muted);margin-top:4px">중정·분동·L형은 <b>허브형 용도(주거·근생)</b>에 적용. 복도형(업무·숙박)은 단일 유지.</div>
+           <hr style="border:none;border-top:1px solid var(--surf3);margin:10px 0">
+           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+             <span class="lbl" style="margin:0">건축라인 점</span>
+             <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planShapePts(-1)">−</button>
+             <b id="pl-shape-n" style="min-width:16px;text-align:center">4</b>
+             <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planShapePts(1)">＋</button>
+             <label style="font-size:11px;display:flex;align-items:center;gap:4px;margin-left:auto;cursor:pointer">
+               <input type="checkbox" id="pl-shape-edit" onchange="planZRender()"> 정점 편집
+             </label>
+             <button class="btn bo btn-sm" style="padding:2px 7px" onclick="planShapeReset()" title="법규 기반 자동 형상으로 복원">↺</button>
+           </div>
+           <div style="font-size:10px;color:var(--muted);margin-top:4px">정점 편집 체크 후 <b>모서리 점 드래그</b>로 형상 수정 (대지·이격 내 제한).</div>
          </div>
-         <div style="font-size:10px;color:var(--muted)">중정·분동·L형은 <b>허브형 용도(주거·근생 등)</b>에 적용. 복도형(업무·숙박)은 단일 유지. 파낸 부분=중정/외부공지.</div>
-       </div>
-       <!-- 건축면적(건축라인) 형상 편집 -->
-       <div class="tbox" style="margin-bottom:8px">
-         <div class="tbox-h">건축라인 형상</div>
-         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0">
-           <span style="font-size:11px;color:var(--muted)">점 개수</span>
-           <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planShapePts(-1)">−</button>
-           <b id="pl-shape-n" style="min-width:16px;text-align:center">4</b>
-           <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planShapePts(1)">＋</button>
-           <label style="font-size:11px;display:flex;align-items:center;gap:4px;margin-left:auto;cursor:pointer">
-             <input type="checkbox" id="pl-shape-edit" onchange="planZRender()"> 정점 편집
-           </label>
-           <button class="btn bo btn-sm" style="padding:2px 7px" onclick="planShapeReset()" title="법규 기반 자동 형상으로 복원">↺</button>
-         </div>
-         <div style="font-size:10px;color:var(--muted)">정점 편집 체크 후 <b>모서리 점을 드래그</b>해 형상 수정 (대지·이격 내로 제한). ↺=자동 형상 복원</div>
-       </div>
-       <!-- 선택 층 실 목록 (스크롤) -->
-       <div class="tbox" style="flex:1;min-height:70px;display:flex;flex-direction:column;overflow:hidden">
-         <div class="tbox-h" style="flex-shrink:0">이 층의 실 <span id="pl-zfl-lbl" style="color:var(--muted);font-weight:400"></span></div>
-         <div style="flex:1;overflow:auto"><table id="pl-zprog"></table></div>
+       </details>
+       <!-- ④ 이 층의 실 목록 -->
+       <details class="zsec" open>
+         <summary><span class="zsec-ic">📋</span> 이 층의 실 <span class="zsec-tag" id="pl-zfl-lbl"></span></summary>
+         <div class="zsec-body" style="padding-top:6px"><table id="pl-zprog" style="width:100%"></table></div>
+       </details>
        </div>
        <div style="text-align:right;margin-top:10px;flex-shrink:0">
          <button class="btn bp" onclick="planStep(3)">다음: 평면도 →</button>
@@ -6281,108 +6327,130 @@ function _renderGA(front,ctx){
 //  ⇒ 면적 = r × 기준층면적, 인접(adj)은 조닝 배치·문(개구부) 생성의 근거
 const SPACE_PROGRAM_DEF={
  '공동주택': {occ:'세대 전용면적(㎡)',occDef:84, rooms:[
-   {k:'ldk',name:'거실·주방(LDK)',cat:'unit',r:0.30,zone:'public',hub:1,adj:['ent','br1','br2','br3','ba2','bal']},
-   {k:'ent',name:'현관',cat:'lobby',r:0.05,zone:'entry',adj:['ldk']},
-   {k:'br1',name:'안방',cat:'unit',r:0.17,zone:'private',adj:['ldk','ba1']},
-   {k:'ba1',name:'욕실(안방)',cat:'mech',r:0.05,zone:'service',adj:['br1']},
-   {k:'br2',name:'침실2',cat:'unit',r:0.13,zone:'private',adj:['ldk']},
-   {k:'br3',name:'침실3',cat:'unit',r:0.12,zone:'private',adj:['ldk']},
-   {k:'ba2',name:'공용욕실',cat:'mech',r:0.05,zone:'service',adj:['ldk']},
-   {k:'bal',name:'발코니',cat:'yard',r:0.13,zone:'ext',adj:['ldk']},
+   {k:'ldk',name:'거실·주방(LDK)',cat:'unit',r:0.28,zone:'public',hub:1,adj:['ent','br1','br2','br3','ba2','pan','alp','bal']},
+   {k:'ent',name:'현관',cat:'lobby',r:0.04,zone:'entry',adj:['ldk']},
+   {k:'br1',name:'안방',cat:'unit',r:0.16,zone:'private',adj:['ldk','ba1','dr']},
+   {k:'ba1',name:'욕실(안방)',cat:'mech',r:0.04,zone:'service',adj:['br1']},
+   {k:'dr',name:'드레스룸',cat:'mech',r:0.04,zone:'service',adj:['br1']},
+   {k:'br2',name:'침실2',cat:'unit',r:0.12,zone:'private',adj:['ldk']},
+   {k:'br3',name:'침실3',cat:'unit',r:0.11,zone:'private',adj:['ldk']},
+   {k:'alp',name:'알파룸·서재',cat:'unit',r:0.07,zone:'public',adj:['ldk']},
+   {k:'ba2',name:'공용욕실',cat:'mech',r:0.04,zone:'service',adj:['ldk']},
+   {k:'pan',name:'다용도실·팬트리',cat:'mech',r:0.04,zone:'service',adj:['ldk']},
+   {k:'bal',name:'발코니',cat:'yard',r:0.12,zone:'ext',adj:['ldk']},
  ]},
  '단독주택': {occ:'가족 수(명)',occDef:4, rooms:[
-   {k:'liv',name:'거실',cat:'unit',r:0.20,zone:'public',hub:1,adj:['ent','kit','br1','br2','bath']},
-   {k:'ent',name:'현관',cat:'lobby',r:0.05,zone:'entry',adj:['liv']},
+   {k:'liv',name:'거실',cat:'unit',r:0.18,zone:'public',hub:1,adj:['ent','kit','br1','br2','bath','stu','yard']},
+   {k:'ent',name:'현관·홀',cat:'lobby',r:0.05,zone:'entry',adj:['liv']},
    {k:'kit',name:'주방·식당',cat:'unit',r:0.16,zone:'public',adj:['liv','uti']},
-   {k:'br1',name:'안방',cat:'unit',r:0.16,zone:'private',adj:['liv','bath']},
+   {k:'br1',name:'안방',cat:'unit',r:0.15,zone:'private',adj:['liv','ba1']},
+   {k:'ba1',name:'욕실(안방)',cat:'mech',r:0.04,zone:'service',adj:['br1']},
    {k:'br2',name:'침실2',cat:'unit',r:0.12,zone:'private',adj:['liv']},
-   {k:'bath',name:'욕실',cat:'mech',r:0.06,zone:'service',adj:['liv']},
-   {k:'uti',name:'다용도실',cat:'mech',r:0.05,zone:'service',adj:['kit']},
+   {k:'stu',name:'서재·가족실',cat:'unit',r:0.09,zone:'public',adj:['liv']},
+   {k:'bath',name:'공용욕실',cat:'mech',r:0.05,zone:'service',adj:['liv']},
+   {k:'uti',name:'다용도실·세탁',cat:'mech',r:0.05,zone:'service',adj:['kit']},
    {k:'yard',name:'마당·데크',cat:'yard',r:0.20,zone:'ext',adj:['liv']},
  ]},
  '업무시설': {occ:'재실 인원(명)',occDef:40, rooms:[
-   {k:'lob',name:'로비·대기',cat:'lobby',r:0.09,zone:'entry',hub:1,adj:['off','mtg','toi']},
-   {k:'off',name:'업무공간(오픈)',cat:'unit',r:0.50,zone:'public',adj:['lob','mtg','exe']},
-   {k:'mtg',name:'회의실',cat:'unit',r:0.12,zone:'public',adj:['lob','off']},
-   {k:'exe',name:'임원실',cat:'unit',r:0.10,zone:'private',adj:['off']},
-   {k:'pan',name:'탕비실',cat:'mech',r:0.05,zone:'service',adj:['off']},
+   {k:'lob',name:'로비·안내',cat:'lobby',r:0.08,zone:'entry',hub:1,adj:['off','mtg','lng','toi']},
+   {k:'off',name:'업무공간(오픈)',cat:'unit',r:0.42,zone:'public',adj:['lob','mtg','exe','pan','copy','lng']},
+   {k:'mtg',name:'회의실',cat:'unit',r:0.11,zone:'public',adj:['lob','off']},
+   {k:'exe',name:'임원실',cat:'unit',r:0.09,zone:'private',adj:['off','mtg']},
+   {k:'lng',name:'휴게·라운지',cat:'unit',r:0.07,zone:'public',adj:['lob','off']},
+   {k:'copy',name:'문서·자료실',cat:'mech',r:0.06,zone:'service',adj:['off']},
+   {k:'pan',name:'탕비실',cat:'mech',r:0.05,zone:'service',adj:['off','lng']},
    {k:'toi',name:'화장실',cat:'mech',r:0.08,zone:'service',adj:['lob']},
  ]},
  '근린생활시설': {occ:'점포 수',occDef:3, rooms:[
-   {k:'sto',name:'점포',cat:'retail',r:0.62,zone:'public',hub:1,adj:['ent','back','toi']},
-   {k:'ent',name:'전면 출입·홀',cat:'lobby',r:0.08,zone:'entry',adj:['sto']},
-   {k:'back',name:'주방·작업실',cat:'unit',r:0.16,zone:'private',adj:['sto','stg']},
+   {k:'sto',name:'점포·영업장',cat:'retail',r:0.50,zone:'public',hub:1,adj:['ent','sea','back','toi']},
+   {k:'ent',name:'전면 출입·홀',cat:'lobby',r:0.07,zone:'entry',adj:['sto']},
+   {k:'sea',name:'객석·대기',cat:'retail',r:0.14,zone:'public',adj:['sto','ent']},
+   {k:'back',name:'주방·작업실',cat:'unit',r:0.15,zone:'private',adj:['sto','stg']},
    {k:'stg',name:'창고',cat:'mech',r:0.08,zone:'service',adj:['back']},
    {k:'toi',name:'화장실',cat:'mech',r:0.06,zone:'service',adj:['sto']},
  ]},
  '판매시설': {occ:'매장 수',occDef:2, rooms:[
-   {k:'sales',name:'매장',cat:'retail',r:0.60,zone:'public',hub:1,adj:['ent','cash','stg','toi']},
-   {k:'ent',name:'출입·로비',cat:'lobby',r:0.08,zone:'entry',adj:['sales']},
+   {k:'sales',name:'매장',cat:'retail',r:0.50,zone:'public',hub:1,adj:['ent','cash','disp','stg','toi']},
+   {k:'ent',name:'출입·로비',cat:'lobby',r:0.07,zone:'entry',adj:['sales']},
    {k:'cash',name:'계산·서비스',cat:'unit',r:0.06,zone:'public',adj:['sales']},
-   {k:'stg',name:'창고·물류',cat:'mech',r:0.14,zone:'service',adj:['sales']},
-   {k:'off',name:'관리사무실',cat:'unit',r:0.06,zone:'private',adj:['sales']},
-   {k:'toi',name:'화장실',cat:'mech',r:0.06,zone:'service',adj:['sales']},
+   {k:'disp',name:'특설·행사매장',cat:'retail',r:0.10,zone:'public',adj:['sales']},
+   {k:'stg',name:'창고·물류',cat:'mech',r:0.13,zone:'service',adj:['sales','off']},
+   {k:'off',name:'관리사무실',cat:'unit',r:0.06,zone:'private',adj:['stg']},
+   {k:'toi',name:'화장실',cat:'mech',r:0.08,zone:'service',adj:['sales']},
  ]},
  '숙박시설': {occ:'객실 수',occDef:8, rooms:[
-   {k:'lob',name:'로비',cat:'lobby',r:0.12,zone:'entry',hub:1,adj:['gu1','gu2','gu3','gu4']},
-   {k:'gu1',name:'객실A',cat:'unit',r:0.19,zone:'private',adj:['lob']},
-   {k:'gu2',name:'객실B',cat:'unit',r:0.19,zone:'private',adj:['lob']},
-   {k:'gu3',name:'객실C',cat:'unit',r:0.19,zone:'private',adj:['lob']},
-   {k:'gu4',name:'객실D',cat:'unit',r:0.19,zone:'private',adj:['lob']},
-   {k:'lin',name:'린넨·정비실',cat:'mech',r:0.06,zone:'service',adj:['lob']},
-   {k:'toi',name:'공용화장실',cat:'mech',r:0.06,zone:'service',adj:['lob']},
+   {k:'lob',name:'로비',cat:'lobby',r:0.10,zone:'entry',hub:1,adj:['gu1','gu2','gu3','gu4','lng','rest','toi']},
+   {k:'lng',name:'라운지·카페',cat:'unit',r:0.07,zone:'public',adj:['lob','rest']},
+   {k:'rest',name:'조식·식당',cat:'unit',r:0.08,zone:'public',adj:['lob','lng']},
+   {k:'gu1',name:'객실A',cat:'unit',r:0.15,zone:'private',adj:['lob']},
+   {k:'gu2',name:'객실B',cat:'unit',r:0.15,zone:'private',adj:['lob']},
+   {k:'gu3',name:'객실C',cat:'unit',r:0.15,zone:'private',adj:['lob']},
+   {k:'gu4',name:'객실D',cat:'unit',r:0.15,zone:'private',adj:['lob']},
+   {k:'lin',name:'린넨·정비실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
+   {k:'toi',name:'공용화장실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
  ]},
  '의료시설': {occ:'진료실 수',occDef:4, rooms:[
-   {k:'wait',name:'대기·접수',cat:'lobby',r:0.16,zone:'entry',hub:1,adj:['cl1','cl2','cl3','tre','toi']},
-   {k:'cl1',name:'진료실1',cat:'unit',r:0.11,zone:'private',adj:['wait']},
-   {k:'cl2',name:'진료실2',cat:'unit',r:0.11,zone:'private',adj:['wait']},
-   {k:'cl3',name:'진료실3',cat:'unit',r:0.11,zone:'private',adj:['wait']},
-   {k:'tre',name:'처치실',cat:'unit',r:0.14,zone:'private',adj:['wait','nur']},
-   {k:'nur',name:'간호스테이션',cat:'unit',r:0.08,zone:'public',adj:['tre','wait']},
-   {k:'toi',name:'화장실',cat:'mech',r:0.06,zone:'service',adj:['wait']},
+   {k:'wait',name:'대기·접수',cat:'lobby',r:0.14,zone:'entry',hub:1,adj:['recp','cl1','cl2','cl3','tre','pha','toi']},
+   {k:'recp',name:'접수·수납',cat:'unit',r:0.05,zone:'public',adj:['wait']},
+   {k:'cl1',name:'진료실1',cat:'unit',r:0.10,zone:'private',adj:['wait']},
+   {k:'cl2',name:'진료실2',cat:'unit',r:0.10,zone:'private',adj:['wait']},
+   {k:'cl3',name:'진료실3',cat:'unit',r:0.10,zone:'private',adj:['wait']},
+   {k:'tre',name:'처치실',cat:'unit',r:0.12,zone:'private',adj:['wait','nur','rec']},
+   {k:'nur',name:'간호스테이션',cat:'unit',r:0.07,zone:'public',adj:['tre','wait','rec']},
+   {k:'rec',name:'회복·주사실',cat:'unit',r:0.08,zone:'private',adj:['tre','nur']},
+   {k:'pha',name:'약제·조제실',cat:'mech',r:0.06,zone:'service',adj:['wait']},
+   {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['wait']},
  ]},
  '교육연구시설': {occ:'강의실 수',occDef:3, rooms:[
-   {k:'hall',name:'홀·복도',cat:'lobby',r:0.12,zone:'entry',hub:1,adj:['cr1','cr2','cr3','sem','toi']},
-   {k:'cr1',name:'강의실1',cat:'unit',r:0.20,zone:'public',adj:['hall']},
-   {k:'cr2',name:'강의실2',cat:'unit',r:0.20,zone:'public',adj:['hall']},
-   {k:'cr3',name:'강의실3',cat:'unit',r:0.18,zone:'public',adj:['hall']},
-   {k:'sem',name:'세미나실',cat:'unit',r:0.12,zone:'public',adj:['hall']},
-   {k:'res',name:'연구·교사실',cat:'unit',r:0.10,zone:'private',adj:['hall']},
-   {k:'toi',name:'화장실',cat:'mech',r:0.06,zone:'service',adj:['hall']},
+   {k:'hall',name:'홀·복도',cat:'lobby',r:0.11,zone:'entry',hub:1,adj:['cr1','cr2','cr3','sem','lab','lng','res','toi']},
+   {k:'cr1',name:'강의실1',cat:'unit',r:0.17,zone:'public',adj:['hall']},
+   {k:'cr2',name:'강의실2',cat:'unit',r:0.17,zone:'public',adj:['hall']},
+   {k:'cr3',name:'강의실3',cat:'unit',r:0.15,zone:'public',adj:['hall']},
+   {k:'lab',name:'실습·실험실',cat:'unit',r:0.12,zone:'public',adj:['hall']},
+   {k:'sem',name:'세미나실',cat:'unit',r:0.10,zone:'public',adj:['hall']},
+   {k:'lng',name:'학생 휴게',cat:'unit',r:0.06,zone:'public',adj:['hall']},
+   {k:'res',name:'연구·교사실',cat:'unit',r:0.08,zone:'private',adj:['hall']},
+   {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['hall']},
  ]},
  '문화집회시설': {occ:'집회 규모',occDef:1, rooms:[
-   {k:'lob',name:'로비·홀',cat:'lobby',r:0.16,zone:'entry',hub:1,adj:['hall','prep','toi']},
-   {k:'hall',name:'집회·공연장',cat:'unit',r:0.52,zone:'public',adj:['lob','stg']},
-   {k:'stg',name:'무대·준비실',cat:'unit',r:0.14,zone:'private',adj:['hall']},
-   {k:'prep',name:'분장·대기실',cat:'unit',r:0.10,zone:'private',adj:['lob']},
-   {k:'toi',name:'화장실',cat:'mech',r:0.08,zone:'service',adj:['lob']},
+   {k:'lob',name:'로비·홀',cat:'lobby',r:0.12,zone:'entry',hub:1,adj:['fol','exhi','cafe','toi']},
+   {k:'fol',name:'호이어·전실',cat:'unit',r:0.08,zone:'public',adj:['lob','hall']},
+   {k:'hall',name:'집회·공연장',cat:'unit',r:0.42,zone:'public',adj:['fol','stg']},
+   {k:'stg',name:'무대·준비실',cat:'unit',r:0.12,zone:'private',adj:['hall','prep']},
+   {k:'prep',name:'분장·대기실',cat:'unit',r:0.08,zone:'private',adj:['stg']},
+   {k:'exhi',name:'전시·라운지',cat:'unit',r:0.08,zone:'public',adj:['lob']},
+   {k:'cafe',name:'카페·매점',cat:'retail',r:0.05,zone:'public',adj:['lob']},
+   {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
  ]},
  '미술관': {occ:'전시 규모',occDef:1, rooms:[
-   {k:'lob',name:'로비·홀',cat:'lobby',r:0.14,zone:'entry',hub:1,adj:['ex1','ex2','edu','shop','toi']},
-   {k:'ex1',name:'기획전시실',cat:'unit',r:0.26,zone:'public',adj:['lob','ex2']},
-   {k:'ex2',name:'상설전시실',cat:'unit',r:0.26,zone:'public',adj:['lob','ex1','sto']},
-   {k:'sto',name:'수장고',cat:'mech',r:0.10,zone:'service',adj:['ex2']},
+   {k:'lob',name:'로비·홀',cat:'lobby',r:0.13,zone:'entry',hub:1,adj:['ex1','ex2','edu','shop','aud','toi']},
+   {k:'ex1',name:'기획전시실',cat:'unit',r:0.24,zone:'public',adj:['lob','ex2']},
+   {k:'ex2',name:'상설전시실',cat:'unit',r:0.24,zone:'public',adj:['lob','ex1','sto']},
+   {k:'sto',name:'수장고',cat:'mech',r:0.09,zone:'service',adj:['ex2']},
    {k:'edu',name:'교육실',cat:'unit',r:0.08,zone:'public',adj:['lob']},
-   {k:'shop',name:'뮤지엄샵',cat:'retail',r:0.06,zone:'public',adj:['lob']},
+   {k:'aud',name:'강당·세미나',cat:'unit',r:0.07,zone:'public',adj:['lob']},
+   {k:'shop',name:'뮤지엄샵',cat:'retail',r:0.05,zone:'public',adj:['lob']},
    {k:'off',name:'사무실',cat:'unit',r:0.05,zone:'private',adj:['lob']},
    {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
  ]},
  '박물관': {occ:'전시 규모',occDef:1, rooms:[
-   {k:'lob',name:'로비·홀',cat:'lobby',r:0.13,zone:'entry',hub:1,adj:['ex1','ex2','edu','toi']},
-   {k:'ex1',name:'상설전시실',cat:'unit',r:0.28,zone:'public',adj:['lob','ex2']},
-   {k:'ex2',name:'기획전시실',cat:'unit',r:0.22,zone:'public',adj:['lob','ex1']},
-   {k:'sto',name:'유물수장고',cat:'mech',r:0.12,zone:'service',adj:['ex1','cons']},
+   {k:'lob',name:'로비·홀',cat:'lobby',r:0.12,zone:'entry',hub:1,adj:['ex1','ex2','edu','shop','toi']},
+   {k:'ex1',name:'상설전시실',cat:'unit',r:0.26,zone:'public',adj:['lob','ex2']},
+   {k:'ex2',name:'기획전시실',cat:'unit',r:0.20,zone:'public',adj:['lob','ex1']},
+   {k:'sto',name:'유물수장고',cat:'mech',r:0.11,zone:'service',adj:['ex1','cons']},
    {k:'cons',name:'보존처리실',cat:'unit',r:0.08,zone:'private',adj:['sto']},
    {k:'edu',name:'교육·강당',cat:'unit',r:0.08,zone:'public',adj:['lob']},
+   {k:'shop',name:'뮤지엄샵',cat:'retail',r:0.05,zone:'public',adj:['lob']},
    {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
  ]},
  '도서관': {occ:'열람석 규모',occDef:1, rooms:[
-   {k:'lob',name:'로비·대출실',cat:'lobby',r:0.12,zone:'entry',hub:1,adj:['read','digi','child','sem','toi']},
-   {k:'read',name:'종합자료실(열람)',cat:'unit',r:0.34,zone:'public',adj:['lob','stack']},
-   {k:'stack',name:'서고',cat:'mech',r:0.14,zone:'service',adj:['read']},
-   {k:'digi',name:'디지털자료실',cat:'unit',r:0.12,zone:'public',adj:['lob']},
-   {k:'child',name:'어린이자료실',cat:'unit',r:0.12,zone:'public',adj:['lob']},
-   {k:'sem',name:'세미나실',cat:'unit',r:0.08,zone:'public',adj:['lob']},
+   {k:'lob',name:'로비·대출실',cat:'lobby',r:0.11,zone:'entry',hub:1,adj:['read','digi','child','sem','lng','toi']},
+   {k:'read',name:'종합자료실(열람)',cat:'unit',r:0.30,zone:'public',adj:['lob','stack']},
+   {k:'stack',name:'서고',cat:'mech',r:0.13,zone:'service',adj:['read']},
+   {k:'digi',name:'디지털자료실',cat:'unit',r:0.11,zone:'public',adj:['lob']},
+   {k:'child',name:'어린이자료실',cat:'unit',r:0.11,zone:'public',adj:['lob']},
+   {k:'sem',name:'세미나·스터디실',cat:'unit',r:0.08,zone:'public',adj:['lob']},
+   {k:'lng',name:'휴게·카페',cat:'unit',r:0.06,zone:'public',adj:['lob']},
    {k:'toi',name:'화장실',cat:'mech',r:0.05,zone:'service',adj:['lob']},
  ]},
 };
@@ -6522,6 +6590,8 @@ function _occRooms(key, def, occN){
   if(key==='공동주택'){                     // n = 세대 전용면적(㎡)
     const beds=n>=84?3:(n>=59?2:1);
     setC('br2',beds>=2?1:0); setC('br3',beds>=3?1:0); setC('ba2',beds>=2?1:0);
+    setC('dr',beds>=2?1:0);                 // 드레스룸=중형(59㎡)+
+    setC('alp',n>=84?1:0);                  // 알파룸·서재=대형(84㎡)+
   } else if(key==='단독주택'){               // n = 가족 수
     const _sa=(S.plan&&S.plan.storyAdj)||null;
     let beds=Math.max(1,Math.min(4,n-1));
@@ -6533,6 +6603,8 @@ function _occRooms(key, def, occN){
     if(beds>maxBeds){ S.plan._roomTrim={want:beds, got:maxBeds, unit:'방', fa:Math.round(fa)}; beds=maxBeds; }
     else if(S.plan) S.plan._roomTrim=null;
     setC('br2',beds>=2?1:0);
+    setC('ba1',beds>=2?1:0);                // 안방 전용욕실=침실 2개+
+    setC('stu',beds>=3?1:0);                // 서재·가족실=대가족(3침실+)
     if(beds>=3) add({k:'br3',name:'침실3',cat:'unit',r:0.10,zone:'private',adj:['liv']});
     if(beds>=4) add({k:'br4',name:'침실4',cat:'unit',r:0.09,zone:'private',adj:['liv']});
   } else if(key==='업무시설'){               // n = 재실 인원
@@ -6790,27 +6862,44 @@ function _planDoors(rooms, g){
       if(any){ addDoor(any); seen[r.id]=1; }
     }
   });
-  return {doors, reachable:Object.keys(seen).length, total:rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void').length};
+  return {doors, adj, reachable:Object.keys(seen).length, total:rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void').length};
 }
 
 // 실간 연계율 — adj 요구 쌍이 (직접 벽공유) 또는 (공통 복도에 함께 접함)이면 달성
-function _zConnectivity(rooms){
-  const corrs=rooms.filter(r=>r.cat==='corr');
-  const circ=rooms.filter(r=>r.cat==='corr'||r.cat==='core'||r.cat==='lobby');
-  const isCirc=r=>r.cat==='corr'||r.cat==='core'||r.cat==='lobby'||r.hub;
-  const touchesCirc=r=>circ.some(c=>c!==r&&_sharedSeg(r,c));
-  const viaCorr=(A,B)=>corrs.some(c=>_sharedSeg(A,c)&&_sharedSeg(B,c));
+// 실간 연계율 — 건축계획상 '연결'의 정의:
+//  ① adj 명시쌍이 직접 문/벽 공유, 또는  ② 순환동선(허브·복도·로비·코어)만 경유하는 문 경로(≤2단계)로 이어짐.
+//  거실(허브) 경유 침실↔침실처럼 공용동선을 통한 연결도 정합 연계로 계상(직접 벽공유 불필요).
+//  doorAdj = _planDoors가 만든 문 인접 그래프(id→[id]). 없으면 공유벽으로 폴백.
+function _zConnectivity(rooms, doorAdj){
+  const byId={}; rooms.forEach(r=>byId[r.id]=r);
+  const isCirc=r=>r&&(r.cat==='corr'||r.cat==='core'||r.cat==='lobby'||r.hub);
+  // 문 그래프 없으면 공유벽으로 그래프 구성(폴백)
+  const G={}; rooms.forEach(r=>G[r.id]=[]);
+  if(doorAdj){ rooms.forEach(r=>{ (doorAdj[r.id]||[]).forEach(n=>{ if(byId[n]) G[r.id].push(n); }); }); }
+  else { for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){ const A=rooms[i],B=rooms[j];
+    if(_sharedSeg(A,B)){ G[A.id].push(B.id); G[B.id].push(A.id); } } }
+  // A→B 연결 판정: 직접 이웃 or 순환동선·공용/판매(오픈) 공간 경유(최대 2 hop).
+  //  중간 경유 노드 = 순환동선(허브·복도·로비·코어) 또는 공용/판매존(거실·오픈오피스·매장 등 개방공간).
+  //  사적실(침실·객실 등)은 중간 경유 불가 → 침실↔침실 우회연결은 미인정(동선 정합 유지).
+  const canPass=r=>isCirc(r)||(r&&(r.zone==='public'||r.cat==='retail'));
+  function linked(aId,bId){
+    if(aId===bId) return true;
+    const q=[[aId,0]], seen={}; seen[aId]=1;
+    while(q.length){ const [id,d]=q.shift();
+      for(const n of (G[id]||[])){ if(n===bId) return true;
+        if(seen[n]||d>=2) continue;             // 최대 2단계, 중간 경유는 개방공간만
+        if(canPass(byId[n])){ seen[n]=1; q.push([n,d+1]); } } }
+    return false;
+  }
   let want=0,met=0;
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){ const A=rooms[i],B=rooms[j];
-    // 외부공간(마당·발코니·조경)은 실간 연계율 분모에서 제외 — 창·문(개구부)만 있으면 충분
-    if(A.zone==='ext'||B.zone==='ext') continue;
+    if(A.zone==='ext'||B.zone==='ext') continue;   // 외부공간(마당·발코니)은 분모 제외
     if((A.adj&&A.key&&A.adj.indexOf(B.key)>=0)||(B.adj&&B.key&&B.adj.indexOf(A.key)>=0)){ want++;
-      // 직접 공유벽 · 공통복도 · (adj 상대가 순환동선이고 본실이 복도 등 순환동선에 접함 → 복도가 로비/허브의 연장)
-      const circLink=(isCirc(A)&&touchesCirc(B))||(isCirc(B)&&touchesCirc(A));
-      if(_sharedSeg(A,B)||viaCorr(A,B)||circLink) met++; } }
-  // adj 요구가 없는 전용실(아파트 세대·객실 등)은 '순환동선(복도·코어·홀) 직접 접함'을 연계 요건으로 계상
+      if(_sharedSeg(A,B)||linked(A.id,B.id)) met++; } }
+  // adj 미지정 전용실(아파트 세대·객실 등)은 '순환동선 접속(문 경로)'을 연계 요건으로 계상
+  const circ=rooms.filter(isCirc);
   rooms.forEach(r=>{ if((r.cat==='unit'||r.cat==='retail')&&(!r.adj||!r.adj.length)){
-    want++; if(circ.some(c=>c!==r&&_sharedSeg(r,c))) met++; } });
+    want++; if(circ.some(c=>c!==r&&(_sharedSeg(r,c)||(G[r.id]||[]).indexOf(c.id)>=0))) met++; } });
   return {want,met,pct:want?Math.round(met/want*100):100};
 }
 // 두 사각형(그리드)의 공유벽 길이 — 연계 배치 점수용
@@ -7022,8 +7111,9 @@ function planZonePack(fi){
     const cell=it=>Math.max(1,it.cells||1);
     const minCols=Math.max(2,Math.ceil(2.4/cw));   // 전면 최소 폭(2.4m) 확보 — 최소 2열
     const tot0=list.reduce((s,it)=>s+cell(it),0);
-    // 뒤(비복도측)에 겹쳐도 되는 실 = 서비스·설비·홀(전용실/거실/객실은 반드시 복도 접함)
-    const svc=(it)=>it.cat==='mech'||it.cat==='lobby'||it.zone==='service';
+    // 뒤(비복도측)에 겹쳐도 되는 실 = 순수 서비스·설비(화장실·창고 등). 단, 진입 로비·허브(주동선 절점)는
+    //  반드시 복도에 면해야 하므로 제외 — 로비가 복도 반대편으로 밀리면 전 실이 로비와 격리됨(연계율 붕괴).
+    const svc=(it)=>!(it.hub||it.zone==='entry') && (it.cat==='mech'||it.cat==='lobby'||it.zone==='service');
     const groups=[];
     for(let i=0;i<list.length;i++){
       const narrow=(it)=>w*cell(it)/tot0<minCols;
@@ -7058,7 +7148,8 @@ function planZonePack(fi){
     for(let c=Rx;c<Rx+Rw;c++) if(cy>=0&&cy<rows) grid[cy][c]=corr.id; rooms.push(corr); };
   // 반복 실 용도=슬라이싱 2밴드+복도 / 허브 중심 용도=허브 성장 방사형 (useCorridor·aptMulti는 코어블록에서 산정)
   const ord=adjOrder(items);
-  if(useCorridor && Rh>=5 && Rw>=3 && ord.length>=4){
+  // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(계단실·편복도형)
+  if(useCorridor && Rh>=5 && Rw>=3 && (ord.length>=4 || (aptMulti && ord.length>=2))){
     const half=Math.ceil(ord.length/2), g1=ord.slice(0,half), g2=ord.slice(half);
     // 진입/로비가 있는 그룹(g1)을 '진입 방향' 밴드에 배치 → 주출입과 로비가 일치
     const gEntryBottom=(entryDir==='south'||entryDir==='east');
@@ -7212,8 +7303,8 @@ function planZonePack(fi){
       const d=Math.hypot(r.x+r.w/2-entC[0], r.y+r.h/2-entC[1])+Math.max(r.w,r.h)/2; if(d>escape)escape=d; }
     if(r.cat==='corr')corrA+=r.area; if(r.cat==='lobby')lobbyA+=r.area;
   });
-  // ── ⑦ 실간 연계율 (직접 인접 또는 공통 복도 접함) ──────────────────────────
-  const connectivity=_zConnectivity(rooms);
+  // ── ⑦ 실간 연계율 (직접 문/벽 공유 또는 순환동선 경유 문 경로) ──────────────
+  const connectivity=_zConnectivity(rooms, dz.adj);
   const cmin=PLAN_CORR_MIN[use]||PLAN_CORR_MIN['_기타'];
   return {fi,use,prog,corridor:(P.corridor==='auto')?prog.corridor:P.corridor,corrW:cw,corrMin:cmin['편복도']||1.2,
     rooms,doors:dz.doors,reach:dz,connectivity,ncore:rooms.filter(r=>r.cat==='core').length,
@@ -7368,12 +7459,26 @@ function planZRender(){
     `<span>🚪 문(동선)</span>`+
     cats.map(c=>`<span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${PLAN_CAT_COLOR[c]};vertical-align:-1px;margin-right:4px"></span>${PLAN_CAT_LABEL[c]||c}</span>`).join('');
   const agg={}; pl.rooms.forEach(r=>{ const nm=r.name||PLAN_CAT_LABEL[r.cat]; const k=nm+'|'+r.cat; (agg[k]=agg[k]||{name:nm,cat:r.cat,n:0,a:0}); agg[k].n++; agg[k].a+=r.area; });
+  // ── 조닝 품질 미터 (연계율·동선 도달·이격) ──────────────────────────────────
+  const zq=document.getElementById('pl-zqual');
+  if(zq){ const rc=pl.reach, cn=pl.connectivity, sbOk=_zSetbackOK();
+    const reachPct=rc&&rc.total?Math.round(rc.reachable/rc.total*100):100;
+    const cls=p=>p>=80?'zbar-ok':p>=50?'zbar-warn':'zbar-err';
+    const col=p=>p>=80?'var(--ok)':p>=50?'var(--warn)':'var(--err)';
+    const meter=(lbl,pct,val)=>`<div class="zmeter-row"><span class="zm-lbl">${lbl}</span>`+
+      `<span class="zbar ${cls(pct)}"><i style="width:${Math.min(100,pct)}%"></i></span>`+
+      `<span class="zm-val" style="color:${col(pct)}">${val}</span></div>`;
+    zq.innerHTML=
+      (cn?meter('실간 연계', cn.pct, cn.pct+'%'):'')+
+      meter('동선 도달', reachPct, (rc?Math.min(rc.reachable,rc.total)+'/'+rc.total:'-'))+
+      `<div class="zmeter-row" style="gap:12px;color:var(--muted)">`+
+        `<span>🚪 문 <b style="color:var(--txt)">${pl.doors.length}</b></span>`+
+        `<span style="color:${sbOk?'var(--ok)':'var(--err)'}">이격 ${fmt1(P.setbackM||0)}m ${sbOk?'준수 ✓':'⚠ 초과'}</span>`+
+      `</div>`;
+  }
   const zp=document.getElementById('pl-zprog');
-  if(zp){ const rc=pl.reach, cn=pl.connectivity;
-    const sbOk=_zSetbackOK();
-    zp.innerHTML=`<tr><td colspan="3" style="font-size:10.5px;color:${sbOk?'var(--ok)':'var(--err)'}">대지 이격 ${fmt1(P.setbackM||0)}m ${sbOk?'준수 ✓':'⚠ 이격선 초과'}</td></tr>`+
-      (rc?`<tr><td colspan="3" style="font-size:10.5px;color:${rc.reachable>=rc.total?'var(--ok)':'var(--warn)'}">동선 도달: ${rc.reachable}/${rc.total}실 · 문 ${pl.doors.length}개${cn?` · <span style="color:${cn.pct>=80?'var(--ok)':cn.pct>=50?'var(--warn)':'var(--err)'}">실간 연계 ${cn.pct}% (${cn.met}/${cn.want})</span>`:''}</td></tr>`:'')+
-      '<tr><th>실</th><th style="text-align:right">개수</th><th style="text-align:right">면적</th></tr>'+Object.values(agg).map(r=>`<tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${PLAN_CAT_COLOR[r.cat]};margin-right:5px"></span>${r.name}</td><td style="text-align:right">${r.n}</td><td style="text-align:right">${fmt1(r.a)}</td></tr>`).join(''); }
+  if(zp){ zp.innerHTML='<tr><th style="text-align:left;color:var(--muted);font-weight:600">실</th><th style="text-align:right;color:var(--muted);font-weight:600">개수</th><th style="text-align:right;color:var(--muted);font-weight:600">면적㎡</th></tr>'+
+      Object.values(agg).map(r=>`<tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${PLAN_CAT_COLOR[r.cat]};margin-right:6px;vertical-align:-1px"></span>${r.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.n}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmt1(r.a)}</td></tr>`).join(''); }
   planZRenderTray();
 }
 function _zBuildGrid(pl){ const g=pl.grid; const grid=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
@@ -7383,7 +7488,7 @@ function _zValid(pl){ const g=pl.grid; const seen=Array.from({length:g.rows},()=
     for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++){ if(seen[rr][cc]) return false; seen[rr][cc]=1; } } return true; }
 function _zCommit(pl){ const g=pl.grid; pl.rooms.forEach(r=>{ r.x=r.gx*g.cw; r.y=r.gy*g.ch; r.w=r.gw*g.cw; r.h=r.gh*g.ch; r.area=r.w*r.h; });
   const dz=_planDoors(pl.rooms,{cw:g.cw,ch:g.ch}); pl.doors=dz.doors; pl.reach=dz;   // 이동 후 문·동선 재계산
-  pl.connectivity=_zConnectivity(pl.rooms);   // 연계율 재계산
+  pl.connectivity=_zConnectivity(pl.rooms, dz.adj);   // 연계율 재계산
   planZRender(); planRenderProgram();
   const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }
 // 빈 셀(공용·홀=배경)을 직사각형으로 병합해 다시 채움 — 실 이동 후 호출
