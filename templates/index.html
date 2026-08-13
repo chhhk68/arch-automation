@@ -6870,26 +6870,31 @@ function _planDoors(rooms, g){
       .sort((a,b)=>{ const sc=o=>(o.cat==='corr'?4:o.cat==='lobby'?3:o.hub?2:1); return sc(b.o)-sc(a.o); });
     if(cand.length) addDoor(cand[0].p);
   });
-  // 도달성: 진입(entry)·로비에서 BFS. 미도달 실은 인접 실과 문 추가
+  // 도달성: 진입(entry)·로비에서 BFS. 미도달 실은 인접 실과 문 추가 — 고정점 반복(연결 후 재전파)으로
+  //  '처리 순서' 때문에 last-resort가 사적실끼리 문 뚫던 문제 제거(코어·복도 단절 시에도 프라이버시 유지).
   const start=rooms.find(r=>r.zone==='entry')||rooms.find(r=>r.cat==='lobby')||rooms.find(r=>r.hub)||rooms[0];
-  const seen={}; if(start){ const q=[start.id]; seen[start.id]=1;
-    while(q.length){ const id=q.shift(); (adj[id]||[]).forEach(n=>{ if(!seen[n]){seen[n]=1;q.push(n);} }); } }
-  rooms.forEach(r=>{
-    if(r.cat==='core'||r.cat==='setback'||r.cat==='void'||seen[r.id]) return;
-    // 이미 도달된 이웃 중 공유벽이 있는 실과 문 연결(공용동선 우선, 부적합 동선 배제)
-    const cands=pairs.filter(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
-      .map(p=>{ const other=(p.A.id===r.id)?p.B:p.A; return {p,other}; })
-      .filter(x=>seen[x.other.id])
-      // 복도>허브>홀 순 우선, 현관(entry)은 최하위(사적실이 현관 경유하지 않도록)
-      .sort((a,b)=>{ const sc=o=>(o.cat==='corr'?3:o.hub?2:(o.cat==='lobby'&&o.zone!=='entry')?1:o.zone==='entry'?-1:0);
-        return sc(b.other)-sc(a.other); });
-    if(cands.length){ addDoor(cands[0].p); seen[r.id]=1; }
-    else { // 도달된 실이 없으면 부적합 동선을 피해 인접 실과 연결(그래도 없으면 최후수단 허용)
-      const any=pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
-             || pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door);
-      if(any){ addDoor(any); seen[r.id]=1; }
+  const bfsFrom=(seedIds)=>{ const s={}, q=[]; seedIds.forEach(id=>{ if(!s[id]){s[id]=1;q.push(id);} });
+    while(q.length){ const id=q.shift(); (adj[id]||[]).forEach(n=>{ if(!s[n]){s[n]=1;q.push(n);} }); } return s; };
+  let seen = start? bfsFrom([start.id]) : {};
+  const _repairable=r=>!(r.cat==='core'||r.cat==='setback'||r.cat==='void');
+  // ① 유효(부적합=사적실 직결 금지) 문으로만 연결, 매 연결 후 BFS 재전파 → 복도망 전체가 한 번에 seen
+  let progress=true, guard=0;
+  while(progress && guard++<50){ progress=false;
+    for(const r of rooms){ if(!_repairable(r)||seen[r.id]) continue;
+      const cands=pairs.filter(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
+        .map(p=>{ const other=(p.A.id===r.id)?p.B:p.A; return {p,other}; })
+        .filter(x=>seen[x.other.id])
+        .sort((a,b)=>{ const sc=o=>(o.cat==='corr'?3:o.hub?2:(o.cat==='lobby'&&o.zone!=='entry')?1:o.zone==='entry'?-1:0);
+          return sc(b.other)-sc(a.other); });
+      if(cands.length){ addDoor(cands[0].p); seen=bfsFrom(Object.keys(seen)); progress=true; }
     }
-  });
+  }
+  // ② 그래도 미도달(유효 이웃 전무) = 코어/복도 완전 단절 등 → 최후수단 1개(프라이버시 최대한 회피)
+  for(const r of rooms){ if(!_repairable(r)||seen[r.id]) continue;
+    const any=pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
+           || pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door);
+    if(any){ addDoor(any); seen=bfsFrom(Object.keys(seen)); }
+  }
   // 도달 카운트 최종 재계산 — 위 반복 중 처리순서로 seen이 과소집계될 수 있어, 완성된 문 그래프로 다시 BFS
   const seen2={}; if(start){ const q2=[start.id]; seen2[start.id]=1;
     while(q2.length){ const id=q2.shift(); (adj[id]||[]).forEach(nn=>{ if(!seen2[nn]){seen2[nn]=1;q2.push(nn);} }); } }
@@ -7268,6 +7273,32 @@ function planZonePack(fi){
   const ord=adjOrder(items);
   const corridorFit = useCorridor && (ord.length>=4 || (aptMulti && ord.length>=2))
     && (entryEW ? (Rw>=5 && Rh>=3) : (Rh>=5 && Rw>=3));
+  // ── 분동(split, 복도형·남북진입): 건축면적 자체를 2개 별동으로 분리 — 관통 gap + 각 동 복도 + 얇은 연결통로 ──
+  //  두 동 사이는 완전히 외부(동 사이 이격). 연결은 코어측 1행 '연결통로'(브리지)만 → 별동 개념.
+  //  독립 세대(공동주택 다세대)에만 완전분리 — 단일 프로그램(업무·판매 등 공용 로비 1개)은 두 동으로 못 나눔
+  //  → 그 경우는 아래 연결형(두 날개+연속 복도)으로 처리(연계 유지).
+  if(corridorFit && !entryEW && massForm==='split' && massEff && aptMulti && Rw>=10 && ord.length>=4){
+    const gw=Math.max(2,Math.min(Rw-8,Math.round(Rw*0.14))), gx=Rx+Math.floor((Rw-gw)/2);
+    const lw=gx-Rx, rw=(Rx+Rw)-(gx+gw);
+    let ht=Math.max(2,Math.min(Rh-3,Math.round((Rh-1)*0.5))); const corrY=Ry+ht;
+    const topGapH=corrY-Ry, botGapH=(Ry+Rh)-(corrY+1);
+    if(topGapH>=1) carveVoid(gx,Ry,gw,topGapH,'동 사이 이격');       // 상단 관통 gap(외부)
+    if(botGapH>=1) carveVoid(gx,corrY+1,gw,botGapH,'동 사이 이격');   // 하단 관통 gap(외부)
+    const tot=(lw+rw)||1, cut=Math.max(1,Math.min(ord.length-1,Math.round(ord.length*lw/tot)));
+    const leftRooms=ord.slice(0,cut), rightRooms=ord.slice(cut);   // 코어측(좌) 동에 진입/로비
+    const gEntryBottom=(entryDir==='south'||entryDir==='east');
+    const layBlock=(list,bx,bw2)=>{ if(!list.length||bw2<1) return;
+      if(bw2<3||list.length<2){ partitionRect(list,bx,Ry,bw2,Rh); return; }
+      const half=Math.ceil(list.length/2), a=list.slice(0,half), b=list.slice(half);
+      const topB=gEntryBottom?b:a, botB=gEntryBottom?a:b;
+      placeBandWithVoid(topB,bx,Ry,bw2,ht,true,null);
+      const corr={id:nid(),name:'복도',cat:'corr',zone:'public',adj:[]}; corr.gx=bx;corr.gy=corrY;corr.gw=bw2;corr.gh=1;
+      for(let c=bx;c<bx+bw2;c++) grid[corrY][c]=corr.id; rooms.push(corr);
+      placeBandWithVoid(botB,bx,corrY+1,bw2,Rh-ht-1,false,null); };
+    layBlock(leftRooms,Rx,lw); layBlock(rightRooms,gx+gw,rw);
+    const bridge={id:nid(),name:'연결통로',cat:'corr',zone:'public',adj:[]}; bridge.gx=gx;bridge.gy=corrY;bridge.gw=gw;bridge.gh=1;
+    for(let c=gx;c<gx+gw;c++) if(grid[corrY][c]==null) grid[corrY][c]=bridge.id; rooms.push(bridge);
+  } else
   // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(편복도형).
   //  남/북 진입=수평 복도(상·하 밴드) / 동·서 진입=수직 복도(좌·우 밴드) — 진입방향에 복도축 정렬.
   if(corridorFit && entryEW){
