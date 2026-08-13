@@ -6826,11 +6826,15 @@ function _planDoors(rooms, g){
   const cw=g.cw, ch=g.ch, DW=Math.min(1.0, cw*0.7, ch*0.7);  // 문 폭 ~0.9m
   const byKey={}; rooms.forEach(r=>{ if(r.key) byKey[r.key]=r; });
   const _adjLink=(A,B)=>(A.adj&&A.key&&A.adj.indexOf(B.key)>=0)||(B.adj&&B.key&&B.adj.indexOf(A.key)>=0);
-  // 동선 적합성: 사적실(침실·안방)은 현관(entry)·타 사적실과 직접 연결 금지 — 반드시 거실·복도·홀(공용동선) 경유
-  //  (adj에 명시된 연결은 허용). 예: 현관→침실 직결 방지
+  // 프라이버시 동선 규칙: 사적실(침실·객실·진료실·병실·임원실)은 순환동선(복도·홀·로비·허브)으로만 진입.
+  //  타 사적실·현관·비순환 공용/서비스실과 직접 연결(문) 금지 → 벽체로 분리. (adj 명시 연결은 허용: 예 안방-전용욕실)
+  //  건축계획 원칙: 프라이버시 공간은 복도(또는 거실·홀 등 공용동선)를 통해서만 접근, 벽으로 구획.
+  const _circ=r=>r.cat==='corr'||r.cat==='core'||r.cat==='lobby'||r.hub;
   const _badDoor=(A,B)=>{ if(_adjLink(A,B)) return false;
-    const priv=r=>r.zone==='private', ent=r=>r.zone==='entry';
-    return (priv(A)&&priv(B))||(priv(A)&&ent(B))||(priv(B)&&ent(A)); };
+    const priv=r=>r.zone==='private';
+    if(priv(A)&&!_circ(B)) return true;   // 사적실 A는 순환동선 B로만 진입
+    if(priv(B)&&!_circ(A)) return true;
+    return false; };
   // 서비스실(화장실·욕실·설비·창고) = 허브/복도/로비의 '자동 개구부' 대상에서 제외
   //  → adj로 명시된 연결(예: 화장실 adj 로비)이나 도달성 경유로만 문 생성. 거실↔창고 등 부적합 직결 방지
   const _wet=r=>r.cat==='mech'||r.zone==='service';
@@ -7153,8 +7157,10 @@ function planZonePack(fi){
     const groups=[];
     for(let i=0;i<list.length;i++){
       const narrow=(it)=>w*cell(it)/tot0<minCols;
-      // 좁은 실 2개는 '한쪽이 서비스실일 때만' 스택(서비스실을 뒤로) — 전용실끼리 겹쳐 뒤 실이 복도 격리되던 문제 방지
-      if(narrow(list[i]) && i+1<list.length && narrow(list[i+1]) && (svc(list[i])||svc(list[i+1]))){
+      // 좁은 실 2개는 '한쪽이 서비스실일 때만' 스택(서비스실을 뒤로). 단, 복도측(앞) 실이 사적실이면 스택 금지 —
+      //  서비스실이 사적실 뒤에 갇혀 그 사적실을 통해서만 접근(프라이버시 위반)되던 문제 방지 → 서비스실도 복도에 직접 면함.
+      const front = svc(list[i]) ? list[i+1] : list[i];
+      if(narrow(list[i]) && i+1<list.length && narrow(list[i+1]) && (svc(list[i])||svc(list[i+1])) && front && front.zone!=='private'){
         groups.push(svc(list[i]) ? [list[i+1],list[i]] : [list[i],list[i+1]]); i++;   // g[0]=전용(복도측), g[1]=서비스(뒤)
       }
       else groups.push([list[i]]);
@@ -7214,7 +7220,8 @@ function planZonePack(fi){
     const svc=(it)=>!(it.hub||it.zone==='entry')&&(it.cat==='mech'||it.cat==='lobby'||it.zone==='service');
     const groups=[];
     for(let i=0;i<list.length;i++){ const narrow=(it)=>h*cell(it)/tot0<minRows;
-      if(narrow(list[i])&&i+1<list.length&&narrow(list[i+1])&&(svc(list[i])||svc(list[i+1]))){
+      const front = svc(list[i]) ? list[i+1] : list[i];   // 복도측(앞) 실 — 사적실이면 스택 금지(프라이버시)
+      if(narrow(list[i])&&i+1<list.length&&narrow(list[i+1])&&(svc(list[i])||svc(list[i+1]))&&front&&front.zone!=='private'){
         groups.push(svc(list[i])?[list[i+1],list[i]]:[list[i],list[i+1]]); i++; }
       else groups.push([list[i]]); }
     const gcell=g=>g.reduce((s,it)=>s+cell(it),0), gtot=groups.reduce((s,g)=>s+gcell(g),0)||1;
