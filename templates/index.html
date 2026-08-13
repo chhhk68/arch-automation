@@ -1133,7 +1133,9 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
                <option value="south">남측 진입</option><option value="north">북측 진입</option>
                <option value="east">동측 진입</option><option value="west">서측 진입</option>
              </select>
+             <button class="btn bo btn-sm" style="font-size:10.5px;padding:4px 7px" onclick="planZRoadAuto()" title="접한 도로 현황으로 진입방향 자동 설정">🛣️ 도로</button>
            </div>
+           <div id="pl-zroad-note" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
          </div>
        </details>
        <!-- ② 스토리 → 조닝 -->
@@ -2327,16 +2329,36 @@ async function _detectRoadDir(){
     const r=await fetch('/api/roads?lat='+cy+'&lon='+cx+'&r=150');
     const d=await r.json(); const roads=d.roads||[];
     if(!roads.length) return null;
-    let best=null,bd=1e18;
-    roads.forEach(rd=>{ (rd.coords||[]).forEach(c=>{ const dx=c[0]-cx,dy=c[1]-cy, dist=(dx*dx+dy*dy)*(rd.major?0.6:1.0);
-      if(dist<bd){ bd=dist; best=c; } }); });
-    if(!best) return null;
-    const cosLat=Math.cos(cy*Math.PI/180), ex=(best[0]-cx)*cosLat, ny=best[1]-cy;
-    return (Math.abs(ny)>=Math.abs(ex)) ? (ny>0?'north':'south') : (ex>0?'east':'west');
+    // 각 방향(N/S/E/W)별 가장 가까운 도로점 거리 → 최근접 방향을 진입방향으로(단일점 편향 완화)
+    const cosLat=Math.cos(cy*Math.PI/180);
+    const dmin={north:1e18,south:1e18,east:1e18,west:1e18};
+    roads.forEach(rd=>{ const wgt=(rd.major?0.6:1.0); (rd.coords||[]).forEach(c=>{
+      const ex=(c[0]-cx)*cosLat, ny=c[1]-cy, dist=(ex*ex+ny*ny)*wgt;
+      const dir=(Math.abs(ny)>=Math.abs(ex)) ? (ny>0?'north':'south') : (ex>0?'east':'west');
+      if(dist<dmin[dir]) dmin[dir]=dist; }); });
+    let bestDir=null,bd=1e18; for(const k in dmin) if(dmin[k]<bd){ bd=dmin[k]; bestDir=k; }
+    return bestDir;
   }catch(e){ return null; }
 }
+// 접한 도로 현황으로 진입방향 자동 설정(사용자 버튼) — userSet 해제 후 재감지·재배치
+function planZRoadAuto(){
+  const note=document.getElementById('pl-zroad-note'); if(note) note.textContent='도로 감지 중…';
+  _detectRoadDir().then(dir=>{ const el=document.getElementById('pl-zentry');
+    if(dir&&el){ S.roadEntryDir=dir; el.value=dir; delete el.dataset.userSet;
+      if(S.plan&&S.plan.inited){ try{planZAuto();}catch(_){}} _zRoadNote(); }
+    else if(note){ note.textContent='접한 도로 정보를 찾지 못했습니다 — 수동 선택하세요(필지 검색 필요).'; } });
+}
+// 도로 감지 결과 안내(진입 = 도로 일치 여부)
+function _zRoadNote(){
+  const note=document.getElementById('pl-zroad-note'); if(!note) return;
+  const cur=(document.getElementById('pl-zentry')||{}).value;
+  const ko={north:'북',south:'남',east:'동',west:'서'};
+  if(S.roadEntryDir){ const match=(cur===S.roadEntryDir);
+    note.innerHTML='🛣️ 감지된 접도: <b>'+ko[S.roadEntryDir]+'측</b> · 진입 '+(match?'<span style="color:var(--ok)">도로 일치 ✓</span>':('<span style="color:var(--warn)">'+ko[cur]+'측(도로와 상이)</span>')); }
+  else note.textContent='접도 미감지 — 필지 검색 후 🛣️ 도로 버튼으로 자동 설정';
+}
 // 진입방향 수동 변경 — 사용자 지정 표시 후 재배치(이후 도로 자동감지가 덮어쓰지 않음)
-function planZEntryChange(){ const el=document.getElementById('pl-zentry'); if(el) el.dataset.userSet='1'; planZAuto(); }
+function planZEntryChange(){ const el=document.getElementById('pl-zentry'); if(el) el.dataset.userSet='1'; planZAuto(); try{_zRoadNote();}catch(_){} }
 
 //  opts.silent=true → 탭 이동/알럿 없이 조용히 재검토 (주용도 변경 등 자동 갱신용)
 async function runCheck(opts){
@@ -6476,6 +6498,7 @@ function planStep(n){
     const za=document.getElementById('pl-zstory-ai'), ma=document.getElementById('pl-story-ai');
     if(za&&ma) za.checked=ma.checked;
     const zn=document.getElementById('pl-zstory-note'); if(zn&&P.storyAdj&&P.storyAdj.notes) zn.textContent='반영중: '+P.storyAdj.notes.join(' · ');
+    try{_zRoadNote();}catch(_){}
     planZRender(); }
   if(n===3){ planRenderFloorSel(); planRenderSVG(); planRenderProgram(); planRenderChecks(); }
 }
