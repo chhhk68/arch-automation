@@ -7511,6 +7511,23 @@ function _planLinesSVG(){
     offD:off?('M'+off.map(p=>R(p[0])+','+R(p[1])).join(' L')+' Z'):null,
     fs:Math.max(.5,Math.min(1.1,bw*.028))};
 }
+// 건물 외곽선(건축라인)을 그리드에서 산출 — 매스(중정·L·분동)가 외곽 형상에 반영됨.
+//  '건물 실'(void·setback 제외) 셀의 바깥(비건물·외부)과 접한 모서리에만 벽 → 중정=구멍, 분동=분리 외곽.
+function _zEnvWalls(pl, R){
+  const g=pl.grid; if(!g) return '';
+  const gr=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
+  pl.rooms.forEach(r=>{ for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) gr[rr][cc]=r; });
+  const built=(r,c)=>{ if(r<0||c<0||r>=g.rows||c>=g.cols) return false; const rm=gr[r][c]; return rm && rm.cat!=='void' && rm.cat!=='setback'; };
+  const cw=g.cw, ch=g.ch; let d='';
+  for(let r=0;r<g.rows;r++)for(let c=0;c<g.cols;c++){ if(!built(r,c)) continue;
+    const x=c*cw, y=r*ch;
+    if(!built(r-1,c)) d+='M'+R(x)+' '+R(y)+'L'+R(x+cw)+' '+R(y);
+    if(!built(r+1,c)) d+='M'+R(x)+' '+R(y+ch)+'L'+R(x+cw)+' '+R(y+ch);
+    if(!built(r,c-1)) d+='M'+R(x)+' '+R(y)+'L'+R(x)+' '+R(y+ch);
+    if(!built(r,c+1)) d+='M'+R(x+cw)+' '+R(y)+'L'+R(x+cw)+' '+R(y+ch);
+  }
+  return d;
+}
 // 문(개구부) 렌더 — 개구부 흰 선 + 문짝 + 개폐 호
 function _doorsSVG(doors,R,fs){
   let h=''; (doors||[]).forEach(d=>{ const sw=Math.max(0.05,fs*0.1);
@@ -7587,7 +7604,15 @@ function planZRender(){
   if(L.offD) h+=`<path d="${L.offD}" fill="none" stroke="#e08a3c" stroke-width="${R(fs*.12)}" stroke-dasharray="${R(fs*.5)} ${R(fs*.3)} ${R(fs*.12)} ${R(fs*.3)}"/>`;  // 이격선(건축가능 경계)
   h+=`<path d="${L.buildD}" fill="#ffffff"/><g clip-path="url(#zclip)">`;
   const zWall=R(Math.max(.18,fs*.3));
-  pl.rooms.forEach(r=>{ const col=PLAN_CAT_COLOR[r.cat]||'#ccc'; const sel=(r.id===P.zselRoom);
+  pl.rooms.forEach(r=>{ const sel=(r.id===P.zselRoom);
+    // 매스 void·정북후퇴 = 건물 밖(중정·동사이 이격·외부공지) → 대지 배경색으로 '도려냄' + 파선 라벨
+    const carved=(r.cat==='void'||r.cat==='setback');
+    if(carved){
+      h+=`<rect class="zcell-room${sel?' sel':''}" data-zid="${r.id}" x="${R(r.x)}" y="${R(r.y)}" width="${R(r.w)}" height="${R(r.h)}" fill="#eef2f8" fill-opacity="1" stroke="#9fb0cc" stroke-width="${R(fs*.12)}" stroke-dasharray="${R(fs*.5)} ${R(fs*.35)}"/>`;
+      if(r.name&&r.w>fs*2.2&&r.h>fs*1.4) h+=`<text x="${R(r.x+r.w/2)}" y="${R(r.y+r.h/2)}" text-anchor="middle" dominant-baseline="middle" font-size="${R(fs*.78)}" fill="#7789a6" font-style="italic" pointer-events="none">${r.name}</text>`;
+      return;
+    }
+    const col=PLAN_CAT_COLOR[r.cat]||'#ccc';
     const ext=(r.cat==='yard'||r.cat==='green'||r.zone==='ext');
     const op=ext?.34:(r.cat==='mech'?.45:.55);
     h+=`<rect class="zcell-room${sel?' sel':''}" data-zid="${r.id}" x="${R(r.x)}" y="${R(r.y)}" width="${R(r.w)}" height="${R(r.h)}" fill="${col}" fill-opacity="${op}"${ext?` stroke-dasharray="${R(fs*.5)} ${R(fs*.35)}"`:''}/>`;
@@ -7597,7 +7622,10 @@ function planZRender(){
       if(two) h+=`<text x="${cx}" y="${R(cy+fs*.85)}" text-anchor="middle" dominant-baseline="middle" font-size="${R(fs*.72)}" fill="#5a6b86" pointer-events="none">${fmt1(r.area)}㎡</text>`;
     }
   });
-  h+=`</g><path d="${L.buildD}" fill="none" stroke="#2b3550" stroke-width="${zWall}" stroke-linejoin="miter"/>`;   // 외벽(건축라인)
+  // 건물 외곽선(건축라인) — 그리드 기반 → 매스(중정·L·분동)가 외곽 형상에 반영. 없으면 footPoly로 폴백.
+  const envD=_zEnvWalls(pl,R);
+  h+=`</g>`+(envD?`<path d="${envD}" fill="none" stroke="#2b3550" stroke-width="${zWall}" stroke-linejoin="miter" stroke-linecap="square"/>`
+    :`<path d="${L.buildD}" fill="none" stroke="#2b3550" stroke-width="${zWall}" stroke-linejoin="miter"/>`);
   h+=_doorsSVG(pl.doors,R,fs);
   // ── 이격거리(법적 근거) 치수 + 동선 분리 표기 ──────────────────────────────
   const bw=L.bw, bd=L.bd, ck=S.checkResult, sb=ck&&ck.site;
