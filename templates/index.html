@@ -7000,6 +7000,9 @@ function planZonePack(fi){
   const aptMulti=(use==='공동주택')&&!!(planSPGet(use)||{})._apt;
   const useCorridor=/숙박|업무|의료|판매|교육|문화|미술관|박물관|도서관/.test(use)||/미술관|박물관|도서관/.test(S.fineUse||'')||aptMulti;
   const massForm=(document.getElementById('pl-massform')||{}).value||'single';
+  // 배치 형식(매스) 유효 조건 — 중정·분동·L은 충분한 대지에서만(소형 주택에 비현실적 중정 방지).
+  //  단독주택은 1층(생활층)에만 적용 — 상층 침실층에 깊은 void가 침실을 분리하는 것 방지.
+  const massEff=(massForm!=='single') && (bw>=13 && bd>=12 && A>=180) && !(isHouse && fi>0);
   // ── 코어(계단·EV) — 다층일 때만. 허브형=corePos로 연속 이동(좌↔우), 복도형=끝단(중앙코어는 복도 분단) ──
   let coreW=0, coreX0=0;
   if(P.floors>1){
@@ -7029,21 +7032,25 @@ function planZonePack(fi){
     }
   }
   // ── 배치 형식(매스): 단일/중정/ㄷ자(분동)/L — 내부 void 예약으로 직사각 틀 탈피 ──
-  //  허브형(주거·근생 등)에만. 코어 배치 후 실행(빈 셀만 파냄 → 코어와 겹침 방지). L은 코어 반대편 코너.
-  if(massForm!=='single' && !useCorridor){
+  //  허브형(주거·근생 등): void를 '가장자리 노치'로 파냄 → 내부 실 영역이 연속 유지(격리 방지·허브 도달 확보).
+  //  코어 배치 후 실행(빈 셀만 파냄 → 코어와 겹침 방지). L은 코어 반대편 코너.
+  if(massEff && !useCorridor){
     const rY=solarRows, rH=rows-solarRows, rW=cols; const vc=[];
     const coreRight=(coreW>0 && coreX0+coreW>=cols);   // 코어가 우측이면 L void는 좌측
-    if(massForm==='court'){                    // 중정형: 중앙 void(둘레로 실 배치)
-      const vw=Math.max(1,Math.round(rW*0.28)), vh=Math.max(1,Math.round(rH*0.28));
-      const vx=Math.floor((rW-vw)/2), vy=rY+Math.floor((rH-vh)/2);
+    const entryBottom=(entryDir==='south'||entryDir==='east');   // 진입측=하단(gy 큰 쪽)
+    // 노치 최대 깊이 = 후면 밴드 3칸 이상 남기기(잔여 실 영역이 연속·건강한 밴드가 되도록)
+    const maxVh=Math.max(2,Math.min(Math.round(rH*0.34), rH-3));
+    if(massForm==='court'){                    // 중정형(허브): 진입 반대(후면) 가장자리 노치
+      const vw=Math.max(2,Math.round(rW*0.28)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.28)));
+      const vx=Math.floor((rW-vw)/2), vy=entryBottom?rY:(rows-vh);
       for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
-    } else if(massForm==='wing'){               // ㄷ자(분동느낌): 진입 반대측 중앙을 안쪽으로 파냄 → 두 날개
-      const vw=Math.max(1,Math.round(rW*0.26)), vh=Math.max(1,Math.min(rH-2,Math.round(rH*0.42)));
-      const vx=Math.floor((rW-vw)/2), vy=(entryDir==='north')?(rows-vh):rY;
+    } else if(massForm==='wing'){               // ㄷ자(분동): 진입 반대측 중앙 얕은 노치 → 두 날개(잔여 밴드로 연결)
+      const vw=Math.max(2,Math.round(rW*0.30)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.30)));
+      const vx=Math.floor((rW-vw)/2), vy=entryBottom?rY:(rows-vh);
       for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
-    } else if(massForm==='L'){                  // L형: 코어 반대편 상단 코너 void(외부공지·마당)
-      const vw=Math.max(1,Math.round(rW*0.32)), vh=Math.max(1,Math.round(rH*0.34));
-      const vx=coreRight?0:(cols-vw), vy=rY;
+    } else if(massForm==='L'){                  // L형: 코어 반대편 후면 코너 void(외부공지·마당)
+      const vw=Math.max(2,Math.round(rW*0.32)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.30)));
+      const vx=coreRight?0:(cols-vw), vy=entryBottom?rY:(rows-vh);
       for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
     }
     if(vc.length){
@@ -7146,6 +7153,29 @@ function planZonePack(fi){
   }
   const mkCorr=(cy)=>{ const corr={id:nid(),name:'복도',cat:'corr',zone:'public',adj:[]}; corr.gx=Rx;corr.gy=cy;corr.gw=Rw;corr.gh=1;
     for(let c=Rx;c<Rx+Rw;c++) if(cy>=0&&cy<rows) grid[cy][c]=corr.id; rooms.push(corr); };
+  // 매스 void 파냄(빈 셀만) — 코어·후퇴영역 보호. 반환=void 사각(없으면 null)
+  function carveVoid(vx,vy,vw,vh,name){
+    vx=Math.max(0,Math.round(vx)); vy=Math.max(0,Math.round(vy));
+    vw=Math.max(1,Math.min(cols-vx,Math.round(vw))); vh=Math.max(1,Math.min(rows-vy,Math.round(vh)));
+    const vd={id:nid(),name,cat:'void',zone:'ext',adj:[]}; let mnx=1e9,mny=1e9,mxx=-1,mxy=-1;
+    for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) if(grid[r][c]==null){ grid[r][c]=vd.id; mnx=Math.min(mnx,c);mny=Math.min(mny,r);mxx=Math.max(mxx,c);mxy=Math.max(mxy,r); }
+    if(mxx<0) return null; vd.gx=mnx;vd.gy=mny;vd.gw=mxx-mnx+1;vd.gh=mxy-mny+1; rooms.push(vd); P._massVoid=true; return vd;
+  }
+  // 복도형 밴드를 void 좌/우 세그먼트로 나눠 배치 — 두 세그먼트 모두 같은 연속 복도에 면함(연결 유지)
+  function placeBandWithVoid(list,bx,by,bw,bh,corrBelow,V){
+    if(!list.length||bw<1||bh<1) return;
+    if(V && V.gy<by+bh && V.gy+V.gh>by){   // void가 이 밴드 행과 겹침 → 좌/우로 분할
+      const vL=Math.max(bx,V.gx), vR=Math.min(bx+bw,V.gx+V.gw);
+      const leftW=vL-bx, rightW=(bx+bw)-vR;
+      if(leftW>=1&&rightW>=1){ const tot=leftW+rightW||1;
+        const cut=Math.max(1,Math.min(list.length-1,Math.round(list.length*leftW/tot)));
+        partitionRow(list.slice(0,cut),bx,by,leftW,bh,corrBelow);
+        partitionRow(list.slice(cut),vR,by,rightW,bh,corrBelow); return; }
+      if(rightW>=1){ partitionRow(list,vR,by,rightW,bh,corrBelow); return; }
+      if(leftW>=1){ partitionRow(list,bx,by,leftW,bh,corrBelow); return; }
+    }
+    partitionRow(list,bx,by,bw,bh,corrBelow);
+  }
   // 반복 실 용도=슬라이싱 2밴드+복도 / 허브 중심 용도=허브 성장 방사형 (useCorridor·aptMulti는 코어블록에서 산정)
   const ord=adjOrder(items);
   // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(계단실·편복도형)
@@ -7156,7 +7186,21 @@ function planZonePack(fi){
     const topG=gEntryBottom?g2:g1, botG=gEntryBottom?g1:g2;
     const cT=topG.reduce((s,it)=>s+Math.max(1,it.cells),0), cB=botG.reduce((s,it)=>s+Math.max(1,it.cells),0);
     let ht=Math.round((Rh-1)*cT/(cT+cB)); ht=Math.max(2,Math.min(Rh-3,ht)); const hb=Rh-1-ht;
-    partitionRow(topG,Rx,Ry,Rw,ht,true); mkCorr(Ry+ht); partitionRow(botG,Rx,Ry+ht+1,Rw,hb,false);
+    const corrY=Ry+ht;
+    // ── 배치 형식(매스): 복도형도 반영 — 밴드 내부에 void를 파고 좌/우 세그먼트가 모두 연속 복도에 면함 ──
+    let V=null;
+    if(massEff && Rw>=6){
+      const topY=Ry, botY=corrY+1;                    // top밴드 rows[Ry..corrY-1], bot밴드 rows[corrY+1..]
+      const entryY=gEntryBottom?botY:topY, entryH=gEntryBottom?hb:ht;
+      const farY=gEntryBottom?topY:botY, farH=gEntryBottom?ht:hb;
+      const vw=Math.max(2,Math.min(Rw-2,Math.round(Rw*0.24)));
+      const cx=Rx+Math.floor((Rw-vw)/2);
+      if(massForm==='court' && farH>=2) V=carveVoid(cx, farY, vw, farH, '중정');            // 후면 밴드 중앙 = 중정
+      else if(massForm==='wing' && entryH>=2) V=carveVoid(cx, entryY, vw, entryH, '중정(개방)'); // 진입측 개방 중정 → 두 날개
+      else if(massForm==='L' && farH>=2){ const coreRight=(coreW>0&&coreX0+coreW>=cols);
+        V=carveVoid(coreRight?Rx:(Rx+Rw-vw), farY, vw, farH, '외부공지'); }                  // 코어 반대 코너
+    }
+    placeBandWithVoid(topG,Rx,Ry,Rw,ht,true,V); mkCorr(corrY); placeBandWithVoid(botG,Rx,corrY+1,Rw,hb,false,V);
   } else {
     // ── 허브 중심 방사형 배치 ────────────────────────────────────────────────
     //  동선 적합성: 사적실(침실·안방)이 현관·타 사적실에 붙는 배치는 벌점 → 거실·복도·홀 경유 유도
