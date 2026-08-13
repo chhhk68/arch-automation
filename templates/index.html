@@ -6862,7 +6862,12 @@ function _planDoors(rooms, g){
       if(any){ addDoor(any); seen[r.id]=1; }
     }
   });
-  return {doors, adj, reachable:Object.keys(seen).length, total:rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void').length};
+  // 도달 카운트 최종 재계산 — 위 반복 중 처리순서로 seen이 과소집계될 수 있어, 완성된 문 그래프로 다시 BFS
+  const seen2={}; if(start){ const q2=[start.id]; seen2[start.id]=1;
+    while(q2.length){ const id=q2.shift(); (adj[id]||[]).forEach(nn=>{ if(!seen2[nn]){seen2[nn]=1;q2.push(nn);} }); } }
+  const cntable=rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void');
+  const reachN=cntable.filter(r=>seen2[r.id]).length;
+  return {doors, adj, reachable:reachN, total:cntable.length};
 }
 
 // 실간 연계율 — adj 요구 쌍이 (직접 벽공유) 또는 (공통 복도에 함께 접함)이면 달성
@@ -6975,6 +6980,7 @@ function planZonePack(fi){
   // 코어 최소면적: 일반건물=계단13+EV6+로비 / 단독주택=전용계단(≈4㎡)만
   const minCore=isHouse ? nStair*4 : nStair*13+(needEV?6:0)+(use==='공동주택'?4:10);
   const entryDir=(document.getElementById('pl-zentry')||{}).value||'south';
+  const entryEW=(entryDir==='east'||entryDir==='west');   // 동/서 진입 → 수직 복도·좌우 밴드
   // 대지 현황: 개방·조경 방향(주요실 향, 기본 남향) + 경사(하향측 → 진입 레벨·동선)
   const openDir=(document.getElementById('pl-opendir')||{}).value||'S';   // S/N/E/W
   const slopeDir=(document.getElementById('pl-slope')||{}).value||'';     // '' 평지
@@ -7176,10 +7182,78 @@ function planZonePack(fi){
     }
     partitionRow(list,bx,by,bw,bh,corrBelow);
   }
+  // ── 수직 복도(동/서 진입): partitionRow의 전치판 — 실을 세로로 쌓아 수직 복도에 면함 ──
+  function partitionCol(list,x0,y0,w,h,corrRight){
+    if(!list.length||w<1||h<1) return;
+    const cell=it=>Math.max(1,it.cells||1);
+    const minRows=Math.max(2,Math.ceil(2.4/ch));
+    const tot0=list.reduce((s,it)=>s+cell(it),0);
+    const svc=(it)=>!(it.hub||it.zone==='entry')&&(it.cat==='mech'||it.cat==='lobby'||it.zone==='service');
+    const groups=[];
+    for(let i=0;i<list.length;i++){ const narrow=(it)=>h*cell(it)/tot0<minRows;
+      if(narrow(list[i])&&i+1<list.length&&narrow(list[i+1])&&(svc(list[i])||svc(list[i+1]))){
+        groups.push(svc(list[i])?[list[i+1],list[i]]:[list[i],list[i+1]]); i++; }
+      else groups.push([list[i]]); }
+    const gcell=g=>g.reduce((s,it)=>s+cell(it),0), gtot=groups.reduce((s,g)=>s+gcell(g),0)||1;
+    const minG=Math.max(1,Math.min(minRows,Math.floor(h/groups.length)));
+    let hs=groups.map(g=>Math.max(minG,Math.round(h*gcell(g)/gtot)));
+    let sh=hs.reduce((a,b)=>a+b,0);
+    if(sh!==h){ const idx=[...hs.keys()].sort((a,b)=>hs[b]-hs[a]);
+      if(sh>h){ let over=sh-h,guard=0; while(over>0&&guard++<999){ let moved=false;
+          for(const k of idx){ if(hs[k]>minG){hs[k]--;over--;moved=true;if(over<=0)break;} }
+          if(!moved){ for(const k of idx){ if(hs[k]>1){hs[k]--;over--;if(over<=0)break;} } if(hs.every(v=>v<=1))break; } } }
+      else { let extra=h-sh; for(let k=0;extra>0;k=(k+1)%idx.length){ hs[idx[k]]++; extra--; } } }
+    let y=y0;
+    groups.forEach((g,i)=>{ const hh=hs[i]; if(hh<1) return;
+      if(g.length===1) placeLeaf(g[0],x0,y,w,hh);
+      else if(corrRight){ const wl=Math.max(1,Math.min(w-1,Math.round(w*cell(g[1])/gcell(g))));
+        placeLeaf(g[1],x0,y,wl,hh); placeLeaf(g[0],x0+wl,y,w-wl,hh); }
+      else { const w1=Math.max(1,Math.min(w-1,Math.round(w*cell(g[0])/gcell(g))));
+        placeLeaf(g[0],x0,y,w1,hh); placeLeaf(g[1],x0+w1,y,w-w1,hh); }
+      y+=hh; });
+  }
+  const mkCorrV=(cx)=>{ const corr={id:nid(),name:'복도',cat:'corr',zone:'public',adj:[]}; corr.gx=cx;corr.gy=Ry;corr.gw=1;corr.gh=Rh;
+    for(let r=Ry;r<Ry+Rh;r++) if(cx>=0&&cx<cols) grid[r][cx]=corr.id; rooms.push(corr); };
+  // 수직 밴드를 void 상/하 세그먼트로 나눠 배치 — 두 세그먼트 모두 같은 수직 복도에 면함
+  function placeBandWithVoidV(list,bx,by,bw,bh,corrRight,V){
+    if(!list.length||bw<1||bh<1) return;
+    if(V && V.gx<bx+bw && V.gx+V.gw>bx){
+      const vT=Math.max(by,V.gy), vB=Math.min(by+bh,V.gy+V.gh);
+      const topH=vT-by, botH=(by+bh)-vB;
+      if(topH>=1&&botH>=1){ const tot=topH+botH||1;
+        const cut=Math.max(1,Math.min(list.length-1,Math.round(list.length*topH/tot)));
+        partitionCol(list.slice(0,cut),bx,by,bw,topH,corrRight);
+        partitionCol(list.slice(cut),bx,vB,bw,botH,corrRight); return; }
+      if(botH>=1){ partitionCol(list,bx,vB,bw,botH,corrRight); return; }
+      if(topH>=1){ partitionCol(list,bx,by,bw,topH,corrRight); return; }
+    }
+    partitionCol(list,bx,by,bw,bh,corrRight);
+  }
   // 반복 실 용도=슬라이싱 2밴드+복도 / 허브 중심 용도=허브 성장 방사형 (useCorridor·aptMulti는 코어블록에서 산정)
   const ord=adjOrder(items);
-  // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(계단실·편복도형)
-  if(useCorridor && Rh>=5 && Rw>=3 && (ord.length>=4 || (aptMulti && ord.length>=2))){
+  const corridorFit = useCorridor && (ord.length>=4 || (aptMulti && ord.length>=2))
+    && (entryEW ? (Rw>=5 && Rh>=3) : (Rh>=5 && Rw>=3));
+  // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(편복도형).
+  //  남/북 진입=수평 복도(상·하 밴드) / 동·서 진입=수직 복도(좌·우 밴드) — 진입방향에 복도축 정렬.
+  if(corridorFit && entryEW){
+    const half=Math.ceil(ord.length/2), g1=ord.slice(0,half), g2=ord.slice(half);
+    const gEntryLeft=(entryDir==='west');
+    const leftG=gEntryLeft?g1:g2, rightG=gEntryLeft?g2:g1;   // 진입측 밴드에 로비 그룹(g1)
+    const cL=leftG.reduce((s,it)=>s+Math.max(1,it.cells),0), cR=rightG.reduce((s,it)=>s+Math.max(1,it.cells),0);
+    let wl=Math.round((Rw-1)*cL/(cL+cR)); wl=Math.max(2,Math.min(Rw-3,wl)); const wr=Rw-1-wl;
+    const corrX=Rx+wl;
+    let V=null;
+    if(massEff && Rh>=6){
+      const leftX=Rx, rightX=corrX+1;
+      const entryX=gEntryLeft?leftX:rightX, entryW=gEntryLeft?wl:wr;
+      const farX=gEntryLeft?rightX:leftX, farW=gEntryLeft?wr:wl;
+      const vh=Math.max(2,Math.min(Rh-2,Math.round(Rh*0.24))), cy=Ry+Math.floor((Rh-vh)/2);
+      if(massForm==='court' && farW>=2) V=carveVoid(farX, cy, farW, vh, '중정');
+      else if(massForm==='wing' && entryW>=2) V=carveVoid(entryX, cy, entryW, vh, '중정(개방)');
+      else if(massForm==='L' && farW>=2) V=carveVoid(farX, Ry, farW, vh, '외부공지');
+    }
+    placeBandWithVoidV(leftG,Rx,Ry,wl,Rh,true,V); mkCorrV(corrX); placeBandWithVoidV(rightG,corrX+1,Ry,wr,Rh,false,V);
+  } else if(corridorFit){
     const half=Math.ceil(ord.length/2), g1=ord.slice(0,half), g2=ord.slice(half);
     // 진입/로비가 있는 그룹(g1)을 '진입 방향' 밴드에 배치 → 주출입과 로비가 일치
     const gEntryBottom=(entryDir==='south'||entryDir==='east');
@@ -7229,18 +7303,30 @@ function planZonePack(fi){
         const sc=s*1000 - bad*1200 + t + orient*orientW - (r*cols+c)*0.001;
         if(sc>bs){ bs=sc; best=[c,r]; } }
       return best; }
-    // 진입실 → 진입 방향 가장자리
-    if(entryPr){ let [ew,eh]=sq(entryPr.cells); ew=Math.min(ew,Rw); eh=Math.min(eh,Math.max(1,Math.floor(Rh/3)));
-      const ex=Math.max(Rx,Math.min(Rx+Rw-ew,Rx+Math.round((Rw-ew)/2))), ey=(entryDir==='north')?Ry:rows-eh;
+    // 진입실 → 진입 방향 가장자리 (4방향: 남=하단·북=상단·동=우측·서=좌측)
+    if(entryPr){ let ew,eh;
+      if(entryEW){ eh=Math.max(1,Math.min(Rh,Math.round(Math.sqrt(entryPr.cells)))); ew=Math.max(1,Math.min(Math.max(1,Math.floor(Rw/3)),Math.round(entryPr.cells/eh))); }
+      else { [ew,eh]=sq(entryPr.cells); ew=Math.min(ew,Rw); eh=Math.min(eh,Math.max(1,Math.floor(Rh/3))); }
+      let ex,ey;
+      if(entryDir==='west'){ ex=Rx; ey=Math.max(Ry,Math.min(rows-eh,Ry+Math.round((Rh-eh)/2))); }
+      else if(entryDir==='east'){ ex=Rx+Rw-ew; ey=Math.max(Ry,Math.min(rows-eh,Ry+Math.round((Rh-eh)/2))); }
+      else { ex=Math.max(Rx,Math.min(Rx+Rw-ew,Rx+Math.round((Rw-ew)/2))); ey=(entryDir==='north')?Ry:rows-eh; }
       const er=mkRoom(entryPr); if(place(er,ex,ey,ew,eh)||(function(){const sp=firstFit(ew,eh);return sp&&place(er,sp[0],sp[1],ew,eh);})()) entryRoom=er; }
-    // 허브 → 진입실과 접하게. 단, 진입실 없는 상층은 '중앙'. void(중정·분동)로 큰 허브가 안 들어가면 축소-투-핏
+    // 허브 → 진입실 안쪽(진입→공용 자연 동선). 진입실 없는 상층은 '중앙'. void로 큰 허브 안 들어가면 축소-투-핏
     if(hubPr){ let [hw,hh]=sq(hubPr.cells); hw=Math.min(hw,Rw); hh=Math.min(hh,Rh);
       let placedHub=false;
       for(let t=0;t<40 && !placedHub;t++){
-        let hx=Math.max(Rx,Math.min(Rx+Rw-hw,Rx+Math.round((Rw-hw)/2)));
-        let hy; if(entryRoom) hy=(entryDir==='north')?(entryRoom.gy+entryRoom.gh):(entryRoom.gy-hh);
-        else hy=Ry+Math.round((Rh-hh)/2);
-        hy=Math.max(Ry,Math.min(rows-hh,hy));
+        let hx,hy;
+        if(entryRoom && entryEW){   // 동/서 진입 → 허브는 진입실의 안쪽(수평 방향)
+          hy=Math.max(Ry,Math.min(rows-hh,entryRoom.gy+Math.round((entryRoom.gh-hh)/2)));
+          hx=(entryDir==='west')?(entryRoom.gx+entryRoom.gw):(entryRoom.gx-hw);
+          hx=Math.max(Rx,Math.min(Rx+Rw-hw,hx));
+        } else {                    // 남/북 진입(또는 진입실 없음) → 허브는 진입실 안쪽(수직 방향)
+          hx=Math.max(Rx,Math.min(Rx+Rw-hw,Rx+Math.round((Rw-hw)/2)));
+          if(entryRoom) hy=(entryDir==='north')?(entryRoom.gy+entryRoom.gh):(entryRoom.gy-hh);
+          else hy=Ry+Math.round((Rh-hh)/2);
+          hy=Math.max(Ry,Math.min(rows-hh,hy));
+        }
         const hr=mkRoom(hubPr);
         if(place(hr,hx,hy,hw,hh)){ hubRoom=hr; placedHub=true; }
         else { const sp=firstFit(hw,hh); if(sp&&place(hr,sp[0],sp[1],hw,hh)){ hubRoom=hr; placedHub=true; }
