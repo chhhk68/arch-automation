@@ -2341,25 +2341,30 @@ async function _detectRoadDir(){
     return bestDir;
   }catch(e){ return null; }
 }
-// 접한 도로 현황으로 진입방향 자동 설정(사용자 버튼) — userSet 해제 후 재감지·재배치
+// 접한 도로 현황으로 진입방향 자동 설정(사용자 버튼) — 지상 메인층(1층)에 도로 방향 적용
 function planZRoadAuto(){
   const note=document.getElementById('pl-zroad-note'); if(note) note.textContent='도로 감지 중…';
-  _detectRoadDir().then(dir=>{ const el=document.getElementById('pl-zentry');
-    if(dir&&el){ S.roadEntryDir=dir; el.value=dir; delete el.dataset.userSet;
-      if(S.plan&&S.plan.inited){ try{planZAuto();}catch(_){}} _zRoadNote(); }
+  _detectRoadDir().then(dir=>{ const el=document.getElementById('pl-zentry'), P=S.plan;
+    if(dir&&el){ S.roadEntryDir=dir; P.floorEntry=P.floorEntry||[]; P.floorEntry[0]=dir;   // 지상층=도로
+      if((P.zsel||0)===0){ el.value=dir; delete el.dataset.userSet; }
+      if(P&&P.inited){ try{planZAuto();}catch(_){}} _zRoadNote(); }
     else if(note){ note.textContent='접한 도로 정보를 찾지 못했습니다 — 수동 선택하세요(필지 검색 필요).'; } });
 }
-// 도로 감지 결과 안내(진입 = 도로 일치 여부)
+// 도로 감지·층별 진입 안내 — 지상층은 접도 방향 권장, 상층은 경사지 진입 등 변경 가능
 function _zRoadNote(){
   const note=document.getElementById('pl-zroad-note'); if(!note) return;
+  const P=S.plan, fi=(P&&P.zsel)||0, ground=(fi===0);
   const cur=(document.getElementById('pl-zentry')||{}).value;
   const ko={north:'북',south:'남',east:'동',west:'서'};
+  const lvl = ground ? '<b>지상 메인층</b> — 접도 방향 권장' : '<b>'+(fi+1)+'층(상층)</b> — 경사지 진입 등 자유 변경';
   if(S.roadEntryDir){ const match=(cur===S.roadEntryDir);
-    note.innerHTML='🛣️ 감지된 접도: <b>'+ko[S.roadEntryDir]+'측</b> · 진입 '+(match?'<span style="color:var(--ok)">도로 일치 ✓</span>':('<span style="color:var(--warn)">'+ko[cur]+'측(도로와 상이)</span>')); }
-  else note.textContent='접도 미감지 — 필지 검색 후 🛣️ 도로 버튼으로 자동 설정';
+    note.innerHTML='🛣️ 접도 <b>'+ko[S.roadEntryDir]+'측</b> · 이 층 '+ko[cur]+'측'+(ground?(match?' <span style="color:var(--ok)">일치 ✓</span>':' <span style="color:var(--warn)">(상이)</span>'):'')+'<br>'+lvl; }
+  else note.innerHTML=lvl+' · 접도 미감지(필지 검색 후 🛣️ 도로)';
 }
 // 진입방향 수동 변경 — 사용자 지정 표시 후 재배치(이후 도로 자동감지가 덮어쓰지 않음)
-function planZEntryChange(){ const el=document.getElementById('pl-zentry'); if(el) el.dataset.userSet='1'; planZAuto(); try{_zRoadNote();}catch(_){} }
+function planZEntryChange(){ const el=document.getElementById('pl-zentry'); const P=S.plan;
+  if(el){ el.dataset.userSet='1'; P.floorEntry=P.floorEntry||[]; P.floorEntry[P.zsel==null?0:P.zsel]=el.value; }
+  planZAuto(); try{_zRoadNote();}catch(_){} }
 
 //  opts.silent=true → 탭 이동/알럿 없이 조용히 재검토 (주용도 변경 등 자동 갱신용)
 async function runCheck(opts){
@@ -2389,6 +2394,7 @@ async function runCheck(opts){
     S.checkResult=data;
     if(!opts.silent){ S.scale3DScenario=null;   // 새 검토 → 이전 규모 시나리오 선택 해제
       _detectRoadDir().then(dir=>{ if(dir){ S.roadEntryDir=dir; const el=document.getElementById('pl-zentry');
+        if(S.plan){ S.plan.floorEntry=S.plan.floorEntry||[]; if(S.plan.floorEntry[0]==null) S.plan.floorEntry[0]=dir; }   // 지상층=도로
         if(el&&!el.dataset.userSet){ el.value=dir; if(S.plan&&S.plan.inited){ try{planZAuto&&planZAuto();}catch(_){} } } } });
     }
     showSt('run-status','sb-ok',
@@ -7014,7 +7020,8 @@ function planZonePack(fi){
   const living=A*(1-prog.coreRatio), nStair=living>stairTh?2:1;
   // 코어 최소면적: 일반건물=계단13+EV6+로비 / 단독주택=전용계단(≈4㎡)만
   const minCore=isHouse ? nStair*4 : nStair*13+(needEV?6:0)+(use==='공동주택'?4:10);
-  const entryDir=(document.getElementById('pl-zentry')||{}).value||'south';
+  // 주진입: 층별 저장(P.floorEntry). 지상 메인층(0)은 접도 방향 권장, 상층은 경사지 진입 등 변경 가능.
+  const entryDir=(P.floorEntry&&P.floorEntry[fi])||(document.getElementById('pl-zentry')||{}).value||'south';
   const entryEW=(entryDir==='east'||entryDir==='west');   // 동/서 진입 → 수직 복도·좌우 밴드
   // 대지 현황: 개방·조경 방향(주요실 향, 기본 남향) + 경사(하향측 → 진입 레벨·동선)
   const openDir=(document.getElementById('pl-opendir')||{}).value||'S';   // S/N/E/W
@@ -7601,7 +7608,11 @@ function _doorsSVG(doors,R,fs){
   return h;
 }
 // ── 조닝 렌더 + 편집 ────────────────────────────────────────────────────────
-function planZSel(i){ S.plan.zsel=i; S.plan.zselRoom=null; planZRender(); }
+function planZSel(i){ const P=S.plan; P.zsel=i; P.zselRoom=null;
+  // 선택 층의 주진입 방향을 셀렉트에 반영(층별 저장)
+  const el=document.getElementById('pl-zentry');
+  if(el){ const fe=(P.floorEntry&&P.floorEntry[i])||P.roadEntryDir||el.value; el.value=fe; }
+  try{_zRoadNote();}catch(_){} planZRender(); }
 // ── 건축라인(건축면적) 형상 편집 ────────────────────────────────────────────
 function _footBounds(poly){ let mnX=1e9,mxX=-1e9,mnY=1e9,mxY=-1e9;
   (poly||[]).forEach(p=>{mnX=Math.min(mnX,p[0]);mxX=Math.max(mxX,p[0]);mnY=Math.min(mnY,p[1]);mxY=Math.max(mxY,p[1]);});
