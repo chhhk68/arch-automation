@@ -6872,10 +6872,13 @@ function _planDoors(rooms, g){
   });
   // 도달성: 진입(entry)·로비에서 BFS. 미도달 실은 인접 실과 문 추가 — 고정점 반복(연결 후 재전파)으로
   //  '처리 순서' 때문에 last-resort가 사적실끼리 문 뚫던 문제 제거(코어·복도 단절 시에도 프라이버시 유지).
-  const start=rooms.find(r=>r.zone==='entry')||rooms.find(r=>r.cat==='lobby')||rooms.find(r=>r.hub)||rooms[0];
+  //  분동(별동)은 각 동의 코어·진입이 독립 접근점 → 진입·코어 전부를 seed(한쪽 동에서만 BFS하면 타 동 미도달)
+  const startRooms=rooms.filter(r=>r.zone==='entry'||r.cat==='core');
+  const start=startRooms[0]||rooms.find(r=>r.cat==='lobby')||rooms.find(r=>r.hub)||rooms[0];
+  const seedIds0=(startRooms.length?startRooms:(start?[start]:[])).map(r=>r.id);
   const bfsFrom=(seedIds)=>{ const s={}, q=[]; seedIds.forEach(id=>{ if(!s[id]){s[id]=1;q.push(id);} });
     while(q.length){ const id=q.shift(); (adj[id]||[]).forEach(n=>{ if(!s[n]){s[n]=1;q.push(n);} }); } return s; };
-  let seen = start? bfsFrom([start.id]) : {};
+  let seen = bfsFrom(seedIds0);
   const _repairable=r=>!(r.cat==='core'||r.cat==='setback'||r.cat==='void');
   // ① 유효(부적합=사적실 직결 금지) 문으로만 연결, 매 연결 후 BFS 재전파 → 복도망 전체가 한 번에 seen
   let progress=true, guard=0;
@@ -6895,9 +6898,8 @@ function _planDoors(rooms, g){
            || pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door);
     if(any){ addDoor(any); seen=bfsFrom(Object.keys(seen)); }
   }
-  // 도달 카운트 최종 재계산 — 위 반복 중 처리순서로 seen이 과소집계될 수 있어, 완성된 문 그래프로 다시 BFS
-  const seen2={}; if(start){ const q2=[start.id]; seen2[start.id]=1;
-    while(q2.length){ const id=q2.shift(); (adj[id]||[]).forEach(nn=>{ if(!seen2[nn]){seen2[nn]=1;q2.push(nn);} }); } }
+  // 도달 카운트 최종 재계산 — 완성된 문 그래프로 다시 BFS(전 진입·코어 seed)
+  const seen2=bfsFrom(seedIds0);
   const cntable=rooms.filter(r=>r.cat!=='core'&&r.cat!=='setback'&&r.cat!=='void');
   const reachN=cntable.filter(r=>seen2[r.id]).length;
   return {doors, adj, reachable:reachN, total:cntable.length};
@@ -7045,9 +7047,13 @@ function planZonePack(fi){
   const massSizeOK=(bw>=12 && bd>=11 && A>=150);
   const massEff=(massForm!=='single') && massSizeOK && !(isHouse && fi>0);
   if(massForm!=='single' && !massSizeOK && fi===0) P._massSuppressed=true;   // UI 안내용(대지 과소)
+  // ── 분동(완전분리): 두 별동 각각 독립 코어·홀·로비 + 프로그램 면적 분할. 충분한 폭에서만.
+  //   복도형·공동주택은 각 동에 미니 프로그램, 단독은 1층만(가로 분동). 관통 이격(연결 없음).
+  const splitDual = (massForm==='split') && massEff && (bw>=16) && (cols>=14) && !(isHouse && fi>0);
   // ── 코어(계단·EV) — 다층일 때만. 허브형=corePos로 연속 이동(좌↔우), 복도형=끝단(중앙코어는 복도 분단) ──
+  //   분동은 각 별동이 자체 코어를 두므로 여기서 통합 코어를 두지 않음(splitDual 스킵).
   let coreW=0, coreX0=0;
-  if(P.floors>1){
+  if(P.floors>1 && !splitDual){
     const regH=rows-solarRows;
     let coreCells=Math.max(2,Math.ceil((isHouse?minCore:Math.max(minCore, A*0.06))/cellA));   // ceil: 최소 소요면적 보장
     // ceil: 코어 최소 소요면적 미달 방지 + 최소 폭(일반 2.5m=계단+승강기 / 단독주택 1.2m=전용계단)
@@ -7076,7 +7082,7 @@ function planZonePack(fi){
   // ── 배치 형식(매스): 단일/중정/ㄷ자(분동)/L — 내부 void 예약으로 직사각 틀 탈피 ──
   //  허브형(주거·근생 등): void를 '가장자리 노치'로 파냄 → 내부 실 영역이 연속 유지(격리 방지·허브 도달 확보).
   //  코어 배치 후 실행(빈 셀만 파냄 → 코어와 겹침 방지). L은 코어 반대편 코너.
-  if(massEff && !useCorridor){
+  if(massEff && !useCorridor && !splitDual){
     const rY=solarRows, rH=rows-solarRows, rW=cols; const vc=[];
     const coreRight=(coreW>0 && coreX0+coreW>=cols);   // 코어가 우측이면 L void는 좌측
     const entryBottom=(entryDir==='south'||entryDir==='east');   // 진입측=하단(gy 큰 쪽)
@@ -7273,31 +7279,52 @@ function planZonePack(fi){
   const ord=adjOrder(items);
   const corridorFit = useCorridor && (ord.length>=4 || (aptMulti && ord.length>=2))
     && (entryEW ? (Rw>=5 && Rh>=3) : (Rh>=5 && Rw>=3));
-  // ── 분동(split, 복도형·남북진입): 건축면적 자체를 2개 별동으로 분리 — 관통 gap + 각 동 복도 + 얇은 연결통로 ──
-  //  두 동 사이는 완전히 외부(동 사이 이격). 연결은 코어측 1행 '연결통로'(브리지)만 → 별동 개념.
-  //  독립 세대(공동주택 다세대)에만 완전분리 — 단일 프로그램(업무·판매 등 공용 로비 1개)은 두 동으로 못 나눔
-  //  → 그 경우는 아래 연결형(두 날개+연속 복도)으로 처리(연계 유지).
-  if(corridorFit && !entryEW && massForm==='split' && massEff && aptMulti && Rw>=10 && ord.length>=4){
-    const gw=Math.max(2,Math.min(Rw-8,Math.round(Rw*0.14))), gx=Rx+Math.floor((Rw-gw)/2);
-    const lw=gx-Rx, rw=(Rx+Rw)-(gx+gw);
-    let ht=Math.max(2,Math.min(Rh-3,Math.round((Rh-1)*0.5))); const corrY=Ry+ht;
-    const topGapH=corrY-Ry, botGapH=(Ry+Rh)-(corrY+1);
-    if(topGapH>=1) carveVoid(gx,Ry,gw,topGapH,'동 사이 이격');       // 상단 관통 gap(외부)
-    if(botGapH>=1) carveVoid(gx,corrY+1,gw,botGapH,'동 사이 이격');   // 하단 관통 gap(외부)
-    const tot=(lw+rw)||1, cut=Math.max(1,Math.min(ord.length-1,Math.round(ord.length*lw/tot)));
-    const leftRooms=ord.slice(0,cut), rightRooms=ord.slice(cut);   // 코어측(좌) 동에 진입/로비
+  // ── 분동(완전분리): 두 별동 각각 독립 코어·홀·로비 + 프로그램 면적 분할. 관통 이격(연결 없음). ──
+  //  각 동이 자족 미니건물 → adj 그래프가 동 내부에서 충족(연계 유지). 세대형(공동주택)은 세대 분할.
+  if(splitDual){
+    const Ry2=solarRows, Rh2=rows-solarRows;
+    // 이격 조정(P.splitGapC 중심 0.3~0.7 · P.splitGapW 폭 m)
+    const gapC=Math.max(0.3,Math.min(0.7, (P.splitGapC!=null?P.splitGapC:0.5)));
+    let gw=Math.max(2,Math.round((P.splitGapW!=null?P.splitGapW:Math.max(3,bw*0.06))/cw)); gw=Math.min(gw, cols-10);
+    let gx=Math.round(cols*gapC - gw/2); gx=Math.max(5, Math.min(cols-5-gw, gx));
+    carveVoid(gx, Ry2, gw, Rh2, '동 사이 이격');
+    // 프로그램 분할: adj 있는 프로그램=각 동 자족(절반 규모 복제) / 독립세대=세대 교대 분할
+    const allUnits = items.every(r=>(r.cat==='unit'||r.cat==='retail')&&(!r.adj||!r.adj.length));
+    let itemsA, itemsB;
+    if(allUnits){ itemsA=[]; itemsB=[]; items.forEach((r,i)=>(i%2?itemsB:itemsA).push(r)); }
+    else {   // 각 동 자족 미니건물(절반 규모 복제). 키를 동별로 분리(_A/_B) → 블록간 거짓 adj 방지
+      const mkBlock=suf=>{ const km={}; items.forEach(r=>{ if(r.key) km[r.key]=r.key+suf; });
+        return items.map(r=>Object.assign({},r,{ key:r.key?r.key+suf:null,
+          adj:(r.adj||[]).map(k=>km[k]||k), cells:Math.max(1,Math.round((r.cells||1)*0.5)) })); };
+      itemsA=mkBlock('_A'); itemsB=mkBlock('_B'); }
     const gEntryBottom=(entryDir==='south'||entryDir==='east');
-    const layBlock=(list,bx,bw2)=>{ if(!list.length||bw2<1) return;
-      if(bw2<3||list.length<2){ partitionRect(list,bx,Ry,bw2,Rh); return; }
+    const buildBlock=(list, bx0, bwB, coreOuterLeft, tag)=>{
+      if(bwB<3||!list.length) return;
+      let rx=bx0, rw=bwB;
+      if(P.floors>1){   // 별동 자체 코어(계단·EV) + 홀·승강장(로비 역할)
+        let coreCells=Math.max(2,Math.ceil(Math.max(minCore*0.55, A*0.03)/cellA));
+        let cwB=Math.max(Math.ceil(2.2/cw), Math.ceil(coreCells/Rh2)); cwB=Math.max(1,Math.min(Math.max(1,Math.floor(bwB/2)), cwB));
+        const cx0 = coreOuterLeft ? bx0 : (bx0+bwB-cwB);
+        const coreH=Math.max(2,Math.min(Rh2,Math.ceil(coreCells/cwB)));
+        const core={id:nid(),name:(isHouse?'계단실':'코어')+tag,cat:'core'}; core.gx=cx0;core.gy=Ry2;core.gw=cwB;core.gh=coreH;
+        for(let r=Ry2;r<Ry2+coreH;r++)for(let c=cx0;c<cx0+cwB;c++) grid[r][c]=core.id; rooms.push(core);
+        if(Rh2-coreH>=1){ const hall={id:nid(),name:'홀·승강장'+tag,cat:'lobby',zone:'public',adj:[]};
+          hall.gx=cx0;hall.gy=Ry2+coreH;hall.gw=cwB;hall.gh=Rh2-coreH;
+          for(let r=hall.gy;r<hall.gy+hall.gh;r++)for(let c=cx0;c<cx0+cwB;c++) grid[r][c]=hall.id; rooms.push(hall); }
+        rx = coreOuterLeft ? (bx0+cwB) : bx0; rw = bwB-cwB;
+      }
+      if(rw<3 || list.length<2){ partitionRect(list, rx, Ry2, rw, Rh2); return; }
       const half=Math.ceil(list.length/2), a=list.slice(0,half), b=list.slice(half);
       const topB=gEntryBottom?b:a, botB=gEntryBottom?a:b;
-      placeBandWithVoid(topB,bx,Ry,bw2,ht,true,null);
-      const corr={id:nid(),name:'복도',cat:'corr',zone:'public',adj:[]}; corr.gx=bx;corr.gy=corrY;corr.gw=bw2;corr.gh=1;
-      for(let c=bx;c<bx+bw2;c++) grid[corrY][c]=corr.id; rooms.push(corr);
-      placeBandWithVoid(botB,bx,corrY+1,bw2,Rh-ht-1,false,null); };
-    layBlock(leftRooms,Rx,lw); layBlock(rightRooms,gx+gw,rw);
-    const bridge={id:nid(),name:'연결통로',cat:'corr',zone:'public',adj:[]}; bridge.gx=gx;bridge.gy=corrY;bridge.gw=gw;bridge.gh=1;
-    for(let c=gx;c<gx+gw;c++) if(grid[corrY][c]==null) grid[corrY][c]=bridge.id; rooms.push(bridge);
+      const cT=topB.reduce((s,it)=>s+Math.max(1,it.cells),0)||1, cB=botB.reduce((s,it)=>s+Math.max(1,it.cells),0)||1;
+      let ht=Math.round((Rh2-1)*cT/(cT+cB)); ht=Math.max(2,Math.min(Rh2-3,ht)); const hb=Rh2-1-ht;
+      placeBandWithVoid(topB,rx,Ry2,rw,ht,true,null);
+      const corr={id:nid(),name:'복도'+tag,cat:'corr',zone:'public',adj:[]}; corr.gx=rx;corr.gy=Ry2+ht;corr.gw=rw;corr.gh=1;
+      for(let c=rx;c<rx+rw;c++) grid[Ry2+ht][c]=corr.id; rooms.push(corr);
+      placeBandWithVoid(botB,rx,Ry2+ht+1,rw,hb,false,null);
+    };
+    buildBlock(itemsA, 0, gx, true, ' A');
+    buildBlock(itemsB, gx+gw, cols-(gx+gw), false, ' B');
   } else
   // 복도형: 반복 실 4개+ 또는 공동주택 다세대(2세대+) → 모든 실/세대가 복도에 면함(편복도형).
   //  남/북 진입=수평 복도(상·하 밴드) / 동·서 진입=수직 복도(좌·우 밴드) — 진입방향에 복도축 정렬.
