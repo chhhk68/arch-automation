@@ -354,7 +354,9 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="hd-t">건축 기획 · 계획설계 스튜디오</div>
     <div class="hd-s">Korean Pre-Design &amp; Schematic Design — SD ver2</div>
   </div>
-  <div style="margin-left:auto;display:flex;gap:8px">
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <a class="hd-ic" href="/terrain" title="지형+지적 결합 3D/CAD 생성기"
+       style="text-decoration:none;width:auto;padding:0 12px;font-size:13px;display:inline-flex;align-items:center">⛰ 지형·CAD</a>
     <button class="hd-ic" title="사용법" onclick="openHelp()">?</button>
     <button class="hd-ic" title="설정" onclick="openSettings()">⚙</button>
   </div>
@@ -1166,6 +1168,19 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
              <option value="L">L형 (모서리 공지)</option>
            </select>
            <div id="pl-massnote" style="font-size:10px;color:var(--muted);margin-top:4px">중정·분동·L·ㄷ자 모두 <b>전 용도</b> 반영(복도형=수평/수직 복도, 허브형=가장자리 노치). 파낸 부분=중정/외부공지. 법규(건폐·용적) 한도 내 자동.</div>
+           <!-- 분동 이동·이격 조정 -->
+           <div id="pl-splitctl" style="display:none;margin-top:7px;padding:7px 8px;background:var(--surf2);border:1px solid var(--border);border-radius:8px">
+             <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+               <span class="lbl" style="margin:0;min-width:40px">동 위치</span>
+               <button class="znav-btn" style="width:26px;height:26px;font-size:13px" onclick="planSplitGap(-0.06,0)" title="두 동을 왼쪽으로">◀</button>
+               <button class="znav-btn" style="width:26px;height:26px;font-size:13px" onclick="planSplitGap(0.06,0)" title="두 동을 오른쪽으로">▶</button>
+               <span class="lbl" style="margin:0 0 0 8px;min-width:40px">동 이격</span>
+               <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planSplitGap(0,-1)" title="이격 좁게">−</button>
+               <button class="znav-btn" style="width:26px;height:26px;font-size:14px" onclick="planSplitGap(0,1)" title="이격 넓게">＋</button>
+               <span id="pl-splitinfo" style="font-size:10.5px;color:var(--muted);margin-left:auto"></span>
+             </div>
+             <div style="font-size:10px;color:var(--muted)">두 별동을 대지 내에서 좌우 이동·이격 조정. 각 동 독립 코어·로비, 프로그램 면적 분할.</div>
+           </div>
            <hr style="border:none;border-top:1px solid var(--surf3);margin:10px 0">
            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
              <span class="lbl" style="margin:0">건축라인 점</span>
@@ -2362,6 +2377,13 @@ function _zRoadNote(){
   else note.innerHTML=lvl+' · 접도 미감지(필지 검색 후 🛣️ 도로)';
 }
 // 진입방향 수동 변경 — 사용자 지정 표시 후 재배치(이후 도로 자동감지가 덮어쓰지 않음)
+// 분동 위치(중심)·이격(폭) 조정 — 재패킹
+function planSplitGap(dc, dw){
+  const P=S.plan;
+  P.splitGapC=Math.max(0.3,Math.min(0.7,(P.splitGapC!=null?P.splitGapC:0.5)+dc));
+  P.splitGapW=Math.max(2,Math.min(12,(P.splitGapW!=null?P.splitGapW:Math.max(3,(P.bw||20)*0.06))+dw));
+  planZAutoSafe();
+}
 function planZEntryChange(){ const el=document.getElementById('pl-zentry'); const P=S.plan;
   if(el){ el.dataset.userSet='1'; P.floorEntry=P.floorEntry||[]; P.floorEntry[P.zsel==null?0:P.zsel]=el.value; }
   planZAuto(); try{_zRoadNote();}catch(_){} }
@@ -7733,6 +7755,11 @@ function planZRender(){
   const mn=document.getElementById('pl-massnote'), mf=(document.getElementById('pl-massform')||{}).value;
   if(mn){ if(mf && mf!=='single' && P._massSuppressed) mn.innerHTML='⚠ 대지 규모가 작아 <b>단일동</b>으로 배치됩니다 (중정·분동·L은 폭12m·깊이11m·150㎡ 이상 권장).';
     else mn.innerHTML='중정·분동·L·ㄷ자 모두 <b>전 용도</b> 반영(복도형=복도 분할, 허브형=가장자리 노치). 파낸 부분=중정/외부공지. 법규(건폐·용적) 한도 내.'; }
+  // 분동 이동·이격 컨트롤 표시(분동 선택 시)
+  const sc=document.getElementById('pl-splitctl');
+  if(sc){ const on=(mf==='split'&&!P._massSuppressed); sc.style.display=on?'block':'none';
+    const si=document.getElementById('pl-splitinfo');
+    if(on&&si){ const c=Math.round((P.splitGapC!=null?P.splitGapC:0.5)*100); si.textContent='중심 '+c+'% · 이격 '+fmt1(P.splitGapW!=null?P.splitGapW:Math.max(3,(P.bw||20)*0.06))+'m'; } }
   const cats=[...new Set(pl.rooms.map(r=>r.cat))];
   const lg=document.getElementById('pl-zlegend');
   if(lg) lg.innerHTML=
