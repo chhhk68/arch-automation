@@ -7717,7 +7717,7 @@ function planZRender(){
   const envD=_zEnvWalls(pl,R);
   h+=`</g>`+(envD?`<path d="${envD}" fill="none" stroke="#2b3550" stroke-width="${zWall}" stroke-linejoin="miter" stroke-linecap="square"/>`
     :`<path d="${L.buildD}" fill="none" stroke="#2b3550" stroke-width="${zWall}" stroke-linejoin="miter"/>`);
-  h+=_doorsSVG(pl.doors,R,fs);
+  // 조닝에서는 개구부(문) 미표기 — 문은 평면도에서만 표기(조닝=존/면적 계획)
   // ── 이격거리(법적 근거) 치수 + 동선 분리 표기 ──────────────────────────────
   const bw=L.bw, bd=L.bd, ck=S.checkResult, sb=ck&&ck.site;
   const dimTxt=(x,y,t,an)=>`<text class="zdim" x="${R(x)}" y="${R(y)}" text-anchor="${an||'middle'}" font-size="${R(fs*.8)}" pointer-events="none">${t}</text>`;
@@ -7766,7 +7766,6 @@ function planZRender(){
     `<span><span style="display:inline-block;width:14px;height:0;border-top:1.5px dashed #a9b6cc;vertical-align:middle;margin-right:4px"></span>대지라인</span>`+
     (L.offD?`<span><span style="display:inline-block;width:14px;height:0;border-top:1.5px dashed #e08a3c;vertical-align:middle;margin-right:4px"></span>이격선(${fmt1(L.setbackM)}m)</span>`:'')+
     `<span><span style="display:inline-block;width:14px;height:0;border-top:2px solid #5b6b86;vertical-align:middle;margin-right:4px"></span>건축라인</span>`+
-    `<span>🚪 문(동선)</span>`+
     cats.map(c=>`<span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${PLAN_CAT_COLOR[c]};vertical-align:-1px;margin-right:4px"></span>${PLAN_CAT_LABEL[c]||c}</span>`).join('');
   const agg={}; pl.rooms.forEach(r=>{ const nm=r.name||PLAN_CAT_LABEL[r.cat]; const k=nm+'|'+r.cat; (agg[k]=agg[k]||{name:nm,cat:r.cat,n:0,a:0}); agg[k].n++; agg[k].a+=r.area; });
   // ── 조닝 품질 미터 (연계율·동선 도달·이격) ──────────────────────────────────
@@ -7801,6 +7800,70 @@ function _zCommit(pl){ const g=pl.grid; pl.rooms.forEach(r=>{ r.x=r.gx*g.cw; r.y
   pl.connectivity=_zConnectivity(pl.rooms, dz.adj);   // 연계율 재계산
   planZRender(); planRenderProgram();
   const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }
+// ── 유동 편집(액체식): 실 이동·리사이즈 시 침범된 인접실이 침범량만큼 변형, 벌어진 공간=void ──
+// 이진 매트릭스(available 셀) 내 최대 직사각형 — 변형된 실을 직사각으로 재적합
+function _maxRectIn(mask, rows, cols){
+  const h=new Array(cols).fill(0); let best={area:0,gx:0,gy:0,gw:0,gh:0};
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++) h[c]=mask[r][c]?h[c]+1:0;
+    const st=[];
+    for(let c=0;c<=cols;c++){ const cur=(c<cols)?h[c]:0;
+      while(st.length && h[st[st.length-1]]>=cur){
+        const height=h[st.pop()];
+        const left=st.length?(st[st.length-1]+1):0, width=c-left;
+        if(height*width>best.area) best={area:height*width, gx:left, gy:r-height+1, gw:width, gh:height};
+      }
+      st.push(c);
+    }
+  }
+  return best;
+}
+// R을 (ngx,ngy,ngw,ngh)로 이동/리사이즈 — 겹친 실은 셀을 잃고 남은 셀의 최대 직사각형으로 변형(액체식).
+//  코어·후퇴영역은 침범 불가(취소). 잃어 벌어진 공간은 이후 _zFillVoid가 void로.
+function _zFluidApply(pl, R, ngx, ngy, ngw, ngh){
+  const g=pl.grid, rows=g.rows, cols=g.cols;
+  ngx=Math.max(0,Math.min(cols-1,ngx)); ngy=Math.max(0,Math.min(rows-1,ngy));
+  ngw=Math.max(1,Math.min(cols-ngx,ngw)); ngh=Math.max(1,Math.min(rows-ngy,ngh));
+  const prot=new Set();
+  pl.rooms.forEach(r=>{ if(r.id!==R.id && (r.cat==='core'||r.cat==='setback'))
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) prot.add(rr*cols+cc); });
+  for(let rr=ngy;rr<ngy+ngh;rr++)for(let cc=ngx;cc<ngx+ngw;cc++) if(prot.has(rr*cols+cc)) return false;  // 보호실 침범 취소
+  const owner=Array.from({length:rows},()=>Array(cols).fill(null));
+  pl.rooms.forEach(r=>{ if(r.id===R.id||r.name==='공용·홀'||r.name==='여유'||r.cat==='void') return;
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<rows&&cc<cols) owner[rr][cc]=r.id; });
+  const affected=new Set();
+  for(let rr=ngy;rr<ngy+ngh;rr++)for(let cc=ngx;cc<ngx+ngw;cc++){ const o=owner[rr][cc]; if(o){ owner[rr][cc]=null; affected.add(o); } }
+  R.gx=ngx;R.gy=ngy;R.gw=ngw;R.gh=ngh;
+  affected.forEach(id=>{ const T=pl.rooms.find(r=>r.id===id); if(!T) return;
+    const mask=Array.from({length:rows},()=>Array(cols).fill(false)); let any=false;
+    for(let rr=0;rr<rows;rr++)for(let cc=0;cc<cols;cc++) if(owner[rr][cc]===id){ mask[rr][cc]=true; any=true; }
+    if(!any){ pl.rooms=pl.rooms.filter(r=>r.id!==id); return; }   // 완전 소멸
+    const rc=_maxRectIn(mask,rows,cols); T.gx=rc.gx;T.gy=rc.gy;T.gw=rc.gw;T.gh=rc.gh;   // 남은 셀 최대 직사각으로 변형
+  });
+  return true;
+}
+// 빈 셀을 void(여유)로 채움 — 유동 편집 후. 벌어진 공간=void(건물 외부로 도려냄)
+function _zFillVoid(pl){ const g=pl.grid, rows=g.rows, cols=g.cols;
+  pl.rooms=pl.rooms.filter(r=>r.name!=='공용·홀' && r.name!=='여유');
+  const grid=Array.from({length:rows},()=>Array(cols).fill(null));
+  pl.rooms.forEach(r=>{ for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<rows&&cc<cols) grid[rr][cc]=r.id; });
+  let idc=(pl._voidSeq=(pl._voidSeq||0));
+  for(let r0=0;r0<rows;r0++)for(let c0=0;c0<cols;c0++){ if(grid[r0][c0]!=null) continue;
+    let w=1; while(c0+w<cols&&grid[r0][c0+w]==null) w++;
+    let h=1; outer: while(r0+h<rows){ for(let b=c0;b<c0+w;b++) if(grid[r0+h][b]!=null) break outer; h++; }
+    const room={id:'zv'+(idc++),name:'여유',cat:'void',zone:'ext',adj:[]};
+    for(let a=r0;a<r0+h;a++)for(let b=c0;b<c0+w;b++) grid[a][b]=room.id;
+    room.gx=c0;room.gy=r0;room.gw=w;room.gh=h; pl.rooms.push(room); }
+  pl._voidSeq=idc;
+}
+// 조닝 실 크기 변경 → 스페이스 프로그램 면적 역반영(상관관계). key 매칭 실의 면적 갱신.
+function _zSyncProgram(R){
+  const P=S.plan, pl=P.cache[P.zsel]; if(!R||!R.key||!pl||!pl.grid) return;
+  try{ const use=P.floorUses[P.zsel]||P.use; const prog=planSPGet(use);
+    const it=(prog||[]).find(x=>(x.k||x.key)===R.key);
+    if(it){ it.area=Math.max(1,Math.round(R.gw*R.gh*pl.grid.cw*pl.grid.ch)); it._userArea=true;
+      const zp=document.getElementById('sp-tbl'); if(zp&&P.step===1&&typeof planSPRender==='function') planSPRender(); } }catch(e){}
+}
 // 빈 셀(공용·홀=배경)을 직사각형으로 병합해 다시 채움 — 실 이동 후 호출
 function _zFillHall(pl){ const g=pl.grid;
   pl.rooms=pl.rooms.filter(r=>r.name!=='공용·홀');
@@ -7815,29 +7878,15 @@ function _zFillHall(pl){ const g=pl.grid;
     room.gx=c0;room.gy=r0;room.gw=w;room.gh=h; pl.rooms.push(room); }
   pl._hallSeq=idc;
 }
-// 실 이동 — 드래그한 실만 움직인다(다른 실은 절대 엉키지 않음).
-//  ① 드롭 위치에 그대로 들어가면 이동  ② 같은 크기 실이면 스왑  ③ 아니면 가장 가까운 빈 자리
+// 실 이동(유동식) — 드래그한 실을 드롭 위치로. 침범된 인접실은 침범량만큼 변형, 원위치·벌어진 공간은 void.
 function planZDrop(id, dropGx, dropGy){
   const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
-  const g=pl.grid; const R=pl.rooms.find(r=>r.id===id); if(!R||R.cat==='setback') return;
+  const g=pl.grid; const R=pl.rooms.find(r=>r.id===id);
+  if(!R||R.cat==='setback'||R.cat==='void'||R.name==='여유') return;
   dropGx=Math.max(0,Math.min(g.cols-R.gw,dropGx)); dropGy=Math.max(0,Math.min(g.rows-R.gh,dropGy));
-  // 점유격자 = 공용·홀(자유공간)과 R 자신을 제외한 실제 실
-  const occ=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
-  pl.rooms.forEach(r=>{ if(r.id===R.id||r.name==='공용·홀') return;
-    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) occ[rr][cc]=r.id; });
-  const fits=(gx,gy)=>{ for(let rr=gy;rr<gy+R.gh;rr++)for(let cc=gx;cc<gx+R.gw;cc++){ if(rr<0||cc<0||rr>=g.rows||cc>=g.cols||occ[rr][cc]!=null) return false; } return true; };
-  const done=()=>{ _zFillHall(pl); P.zselRoom=R.id; _zCommit(pl); _zSelInfo(R.id); };
-  if(fits(dropGx,dropGy)){ R.gx=dropGx; R.gy=dropGy; done(); return; }
-  // 드롭 지점의 실과 크기가 같으면 스왑(둘만 자리 교환 — 나머지 불변)
-  const tid=occ[Math.max(0,Math.min(g.rows-1,dropGy))][Math.max(0,Math.min(g.cols-1,dropGx))];
-  const T=tid&&pl.rooms.find(r=>r.id===tid);
-  if(T&&T.gw===R.gw&&T.gh===R.gh){ const t=[T.gx,T.gy]; T.gx=R.gx;T.gy=R.gy;R.gx=t[0];R.gy=t[1]; done(); return; }
-  // 그 외 → 드롭 지점에서 가장 가까운 빈 자리(항상 최소한 원위치는 존재)
-  let best=null,bs=1e18;
-  for(let gy=0;gy<=g.rows-R.gh;gy++)for(let gx=0;gx<=g.cols-R.gw;gx++){ if(!fits(gx,gy)) continue;
-    const d=(gx-dropGx)*(gx-dropGx)+(gy-dropGy)*(gy-dropGy); if(d<bs){bs=d;best=[gx,gy];} }
-  if(best){ R.gx=best[0]; R.gy=best[1]; done(); return; }
-  showSt('run-status','sb-warn','이동할 공간이 부족합니다 — 자동 정리(⟲)를 사용하세요',false); planZRender();
+  const ok=_zFluidApply(pl, R, dropGx, dropGy, R.gw, R.gh);
+  if(!ok){ showSt('run-status','sb-warn','코어·후퇴영역은 침범할 수 없습니다',false); planZRender(); return; }
+  _zFillVoid(pl); P.zselRoom=R.id; _zCommit(pl); _zSyncProgram(R); _zSelInfo(R.id);
 }
 // 방향키/버튼 이동 — 한 칸씩 (같은 free-move 규칙)
 function planZMove(dc,dr){
@@ -7847,18 +7896,18 @@ function planZMove(dc,dr){
   const R=pl.rooms.find(r=>r.id===P.zselRoom); if(!R||R.name==='공용·홀'||R.cat==='setback') return;
   planZDrop(R.id, R.gx+dc, R.gy+dr);
 }
-// 선택 실 크기 조정(±1칸) — 빈 공간으로만 확장, 최소 1칸
+// 선택 실 크기 조정(유동식, ±1칸) — 확장 시 접한 실이 침범량만큼 변형(밀지 않음), 축소 시 벌어진 공간=void.
+//  스페이스 프로그램 면적에 역반영(_zSyncProgram).
 function planZSize(dw,dh){
   const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
   if(!P.zselRoom){ showSt('run-status','sb-warn','먼저 조정할 실을 클릭해 선택하세요',false); return; }
-  const g=pl.grid, R=pl.rooms.find(r=>r.id===P.zselRoom); if(!R||R.name==='공용·홀'||R.cat==='setback') return;
-  const occ=Array.from({length:g.rows},()=>Array(g.cols).fill(null));
-  pl.rooms.forEach(r=>{ if(r.id===R.id||r.name==='공용·홀') return;
-    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) occ[rr][cc]=r.id; });
+  const g=pl.grid, R=pl.rooms.find(r=>r.id===P.zselRoom);
+  if(!R||R.name==='공용·홀'||R.name==='여유'||R.cat==='setback'||R.cat==='void'){ showSt('run-status','sb-warn','실(전용·공용실)을 선택하세요',false); return; }
   let ngw=Math.max(1,R.gw+dw), ngh=Math.max(1,R.gh+dh);
   if(R.gx+ngw>g.cols) ngw=g.cols-R.gx; if(R.gy+ngh>g.rows) ngh=g.rows-R.gy;
-  for(let rr=R.gy;rr<R.gy+ngh;rr++)for(let cc=R.gx;cc<R.gx+ngw;cc++) if(occ[rr][cc]!=null){ showSt('run-status','sb-warn','옆 실과 겹쳐 확장 불가 — 실을 먼저 옮기세요',false); return; }
-  R.gw=ngw; R.gh=ngh; _zFillHall(pl); _zCommit(pl); _zSelInfo(R.id);
+  const ok=_zFluidApply(pl, R, R.gx, R.gy, ngw, ngh);
+  if(!ok){ showSt('run-status','sb-warn','코어·후퇴영역은 침범할 수 없습니다',false); return; }
+  _zFillVoid(pl); _zCommit(pl); _zSyncProgram(R); _zSelInfo(R.id);
 }
 function planZAuto(){ const P=S.plan; if(P.zsel==null) P.zsel=0;
   P.cache[P.zsel]=planZonePack(P.zsel); P.zselRoom=null;
