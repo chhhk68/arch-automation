@@ -7880,19 +7880,51 @@ function _zOccGrid(pl, R){ const g=pl.grid, rows=g.rows, cols=g.cols;
   pl.rooms.forEach(r=>{ if((R&&r.id===R.id)||r.cat==='void'||r.name==='공용·홀'||r.name==='여유') return;
     for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<rows&&cc<cols) occ[rr][cc]=true; });
   return occ; }
-// 4면 리사이즈(인접실 보호): 확장은 빈/void 셀로만(이웃·격자에서 멈춤), 축소는 자유(벌어진 공간=void).
-//  side: 'l'/'r'/'t'/'b', delta: +확장 / -축소 (셀 단위). 인접실은 겹치거나 축소되지 않음.
+// 소유자 격자(R·void·홀 제외 실제 실의 id per cell)
+function _zOwnerGrid(pl, R){ const g=pl.grid, rows=g.rows, cols=g.cols;
+  const own=Array.from({length:rows},()=>Array(cols).fill(null));
+  pl.rooms.forEach(r=>{ if((R&&r.id===R.id)||r.cat==='void'||r.name==='공용·홀'||r.name==='여유') return;
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<rows&&cc<cols) own[rr][cc]=r.id; });
+  return own; }
+// 4면 리사이즈 1칸 스텝 — 확장은 빈/void는 그냥, 인접실은 축소(최소크기 MIN 유지·사라지지 않음).
+//  축소는 인접실 안 따라옴(벌어진 공간=void). 코어·후퇴는 침범 불가. side:'l'/'r'/'t'/'b', grow:bool
+function _zEdgeStep(pl, R, side, grow){
+  const g=pl.grid, rows=g.rows, cols=g.cols, MIN=2;   // 인접실 최소 2셀(사라짐 방지)
+  if(!grow){   // 축소 — 인접실 무영향, freed→void
+    if(side==='r'){ if(R.gw>1){R.gw--; return true;} }
+    else if(side==='l'){ if(R.gw>1){R.gx++; R.gw--; return true;} }
+    else if(side==='b'){ if(R.gh>1){R.gh--; return true;} }
+    else if(side==='t'){ if(R.gh>1){R.gy++; R.gh--; return true;} }
+    return false;
+  }
+  // 확장 1칸 — 새 스트립 셀
+  const cells=[];
+  if(side==='r'){ if(R.gx+R.gw>=cols) return false; for(let r=R.gy;r<R.gy+R.gh;r++) cells.push([r,R.gx+R.gw]); }
+  else if(side==='l'){ if(R.gx<=0) return false; for(let r=R.gy;r<R.gy+R.gh;r++) cells.push([r,R.gx-1]); }
+  else if(side==='b'){ if(R.gy+R.gh>=rows) return false; for(let c=R.gx;c<R.gx+R.gw;c++) cells.push([R.gy+R.gh,c]); }
+  else { if(R.gy<=0) return false; for(let c=R.gx;c<R.gx+R.gw;c++) cells.push([R.gy-1,c]); }
+  const own=_zOwnerGrid(pl,R);
+  const nb={};   // 침범 이웃 → 잃을 셀
+  for(const [r,c] of cells){ const id=own[r][c]; if(id){ const T=pl.rooms.find(x=>x.id===id);
+    if(T&&(T.cat==='core'||T.cat==='setback')) return false;   // 코어·후퇴 금지
+    (nb[id]=nb[id]||[]).push([r,c]); } }
+  // 각 이웃이 잃은 뒤 max-rect가 MIN 이상인지 확인(사라짐/과소 방지 → 확장 취소)
+  const refit={};
+  for(const id in nb){ const T=pl.rooms.find(x=>x.id===id);
+    const mask=Array.from({length:rows},()=>Array(cols).fill(false));
+    for(let r=T.gy;r<T.gy+T.gh;r++)for(let c=T.gx;c<T.gx+T.gw;c++) mask[r][c]=true;
+    nb[id].forEach(([r,c])=>mask[r][c]=false);
+    const rc=_maxRectIn(mask,rows,cols); if(rc.area<MIN) return false; refit[id]=rc; }
+  // 커밋 — 이웃 축소(재적합), R 확장
+  for(const id in refit){ const T=pl.rooms.find(x=>x.id===id), rc=refit[id]; T.gx=rc.gx;T.gy=rc.gy;T.gw=rc.gw;T.gh=rc.gh; }
+  if(side==='r') R.gw++; else if(side==='l'){ R.gx--; R.gw++; } else if(side==='b') R.gh++; else { R.gy--; R.gh++; }
+  return true;
+}
+// 4면 리사이즈 — delta 셀만큼(부호=확장/축소). 인접실 축소(최소크기 유지) 또는 void.
 function _zEdgeResize(pl, R, side, delta){
-  const g=pl.grid, rows=g.rows, cols=g.cols, occ=_zOccGrid(pl,R);
-  let gx=R.gx, gy=R.gy, gw=R.gw, gh=R.gh;
-  const freeCol=(c,y0,y1)=>{ if(c<0||c>=cols) return false; for(let r=y0;r<y1;r++) if(occ[r][c]) return false; return true; };
-  const freeRow=(r,x0,x1)=>{ if(r<0||r>=rows) return false; for(let c=x0;c<x1;c++) if(occ[r][c]) return false; return true; };
-  if(side==='r'){ if(delta>0){ for(let k=0;k<delta&&freeCol(gx+gw,gy,gy+gh);k++) gw++; } else gw=Math.max(1,gw+delta); }
-  else if(side==='l'){ if(delta>0){ for(let k=0;k<delta&&freeCol(gx-1,gy,gy+gh);k++){ gx--; gw++; } } else { const d=Math.min(-delta,gw-1); gx+=d; gw-=d; } }
-  else if(side==='b'){ if(delta>0){ for(let k=0;k<delta&&freeRow(gy+gh,gx,gx+gw);k++) gh++; } else gh=Math.max(1,gh+delta); }
-  else if(side==='t'){ if(delta>0){ for(let k=0;k<delta&&freeRow(gy-1,gx,gx+gw);k++){ gy--; gh++; } } else { const d=Math.min(-delta,gh-1); gy+=d; gh-=d; } }
-  const changed=(gx!==R.gx||gy!==R.gy||gw!==R.gw||gh!==R.gh);
-  R.gx=gx;R.gy=gy;R.gw=gw;R.gh=gh; return changed;
+  const grow=delta>0; let n=Math.abs(delta), any=false;
+  for(let k=0;k<n;k++){ if(_zEdgeStep(pl,R,side,grow)) any=true; else break; }
+  return any;
 }
 // 조닝 실 크기 변경 → 스페이스 프로그램 면적 역반영(상관관계). key 매칭 실의 면적 갱신.
 function _zSyncProgram(R){
