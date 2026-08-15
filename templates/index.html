@@ -6924,10 +6924,15 @@ function _planDoors(rooms, g){
       if(cands.length){ addDoor(cands[0].p); seen=bfsFrom(Object.keys(seen)); progress=true; }
     }
   }
-  // ② 그래도 미도달(유효 이웃 전무) = 코어/복도 완전 단절 등 → 최후수단 1개(프라이버시 최대한 회피)
+  // ② 그래도 미도달(유효 이웃 전무) = 코어/복도 완전 단절 등 → 최후수단 1개(고립 방지 우선).
+  //   유효(비부적합) 문을 최우선, 없으면 동일타입 인접실(어드조이닝=허용) 우선, 최후로 아무 문.
+  //   고립(문 없는 방)이 프라이버시 위반보다 심각하므로 최후수단은 허용하되 순서로 최소화.
+  const _sameType=(a,b)=>a.key&&a.key===b.key;   // 동일 타입 인접(객실↔객실 등 어드조이닝) = 허용
   for(const r of rooms){ if(!_repairable(r)||seen[r.id]) continue;
-    const any=pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door&&!_badDoor(p.A,p.B))
-           || pairs.find(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door);
+    const cand=pairs.filter(p=>(p.A.id===r.id||p.B.id===r.id)&&!p._door);
+    const any=cand.find(p=>!_badDoor(p.A,p.B))
+           || cand.find(p=>_sameType(p.A,p.B))
+           || cand[0];
     if(any){ addDoor(any); seen=bfsFrom(Object.keys(seen)); }
   }
   // 도달 카운트 최종 재계산 — 완성된 문 그래프로 다시 BFS(전 진입·코어 seed)
