@@ -7543,23 +7543,21 @@ function planZonePack(fi){
     const growable=rooms.filter(r=>(r.cat==='unit'||r.cat==='retail'||r.hub))
       .sort((a,b)=>(b.hub?1:0)-(a.hub?1:0) || (b.gw*b.gh)-(a.gw*a.gh));
     const edgeEmpty=(cells)=>cells.every(([r,c])=>r>=0&&c>=0&&r<rows&&c<cols&&grid[r][c]==null);
+    const growSide=(r,side)=>{
+      if(side==='r'&&r.gx+r.gw<cols){ const cs=[]; for(let rr=r.gy;rr<r.gy+r.gh;rr++) cs.push([rr,r.gx+r.gw]);
+        if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gw++; return true; } }
+      else if(side==='l'&&r.gx>0){ const cs=[]; for(let rr=r.gy;rr<r.gy+r.gh;rr++) cs.push([rr,r.gx-1]);
+        if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gx--; r.gw++; return true; } }
+      else if(side==='b'&&r.gy+r.gh<rows){ const cs=[]; for(let cc=r.gx;cc<r.gx+r.gw;cc++) cs.push([r.gy+r.gh,cc]);
+        if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gh++; return true; } }
+      else if(side==='t'&&r.gy>Ry){ const cs=[]; for(let cc=r.gx;cc<r.gx+r.gw;cc++) cs.push([r.gy-1,cc]);
+        if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gy--; r.gh++; return true; } }
+      return false; };
+    // 비율 개선 우선(짧은 변부터) 성장 — 여유 셀 흡수로 공용·홀 최소화 + 정사각 근접
     let grew=true, guard=0;
-    while(grew && guard++<300){ grew=false;
-      for(const r of growable){
-        // 오른쪽
-        if(r.gx+r.gw<cols){ const cs=[]; for(let rr=r.gy;rr<r.gy+r.gh;rr++) cs.push([rr,r.gx+r.gw]);
-          if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gw++; grew=true; } }
-        // 왼쪽
-        if(r.gx>0){ const cs=[]; for(let rr=r.gy;rr<r.gy+r.gh;rr++) cs.push([rr,r.gx-1]);
-          if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gx--; r.gw++; grew=true; } }
-        // 아래
-        if(r.gy+r.gh<rows){ const cs=[]; for(let cc=r.gx;cc<r.gx+r.gw;cc++) cs.push([r.gy+r.gh,cc]);
-          if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gh++; grew=true; } }
-        // 위(정북후퇴 영역 침범 방지: Ry 이상)
-        if(r.gy>Ry){ const cs=[]; for(let cc=r.gx;cc<r.gx+r.gw;cc++) cs.push([r.gy-1,cc]);
-          if(edgeEmpty(cs)){ cs.forEach(([rr,cc])=>grid[rr][cc]=r.id); r.gy--; r.gh++; grew=true; } }
-      }
-    }
+    while(grew && guard++<400){ grew=false;
+      for(const r of growable){ const order=(r.gw<=r.gh)?['r','l','b','t']:['b','t','r','l'];
+        for(const s of order){ if(growSide(r,s)){ grew=true; break; } } } }
   })();
   // 흡수 못한 잔여 빈 셀만 공용·홀로(최소화)
   for(let r0=0;r0<rows;r0++)for(let c0=0;c0<cols;c0++){ if(grid[r0][c0]!=null) continue;
