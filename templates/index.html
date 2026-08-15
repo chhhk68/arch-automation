@@ -310,6 +310,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .zfloor-bar .flchip{min-width:34px}
 .zvtx{fill:#2f6df6;stroke:#fff;stroke-width:.14;cursor:grab}
 .zvtx:hover{fill:#1b52c9}
+.zedge{fill:#2f6df6;stroke:#fff;stroke-width:.08;opacity:.9}
+.zedge[data-zedge="l"],.zedge[data-zedge="r"]{cursor:ew-resize}
+.zedge[data-zedge="t"],.zedge[data-zedge="b"]{cursor:ns-resize}
+.zedge:hover{fill:#1b52c9}
 .zdim{fill:#7a869c;font-weight:600}
 
 /* ── 조닝 워크스페이스 재설계 (가독성·직관성 강화) ───────────────────────────── */
@@ -1123,7 +1127,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
                <button class="znav-btn" onclick="planZSize(0,-1)" title="높이 −">⤒</button>
              </div>
            </div>
-           <div class="ztool-cap">실 클릭 → <b>드래그</b>로 이동 · <b>←↑↓→</b> 미세이동 · <b>⇥⇤⤓⤒</b> 크기 · <b>⟲</b> 자동정리</div>
+           <div class="ztool-cap">실 클릭 → <b>4면 핸들 드래그</b>로 크기조절(인접실 보호·빈곳 void) · 본체 <b>드래그</b>·<b>←↑↓→</b> 이동 · <b>Shift+클릭</b> 다중선택 후 함께 이동 · <b>⟲</b> 자동정리</div>
            <div style="display:flex;gap:6px;align-items:center;margin-top:9px">
              <button class="btn bo btn-sm" style="flex:1" onclick="planZAuto()">🔀 동선 자동배치</button>
              <button class="btn bo btn-sm" style="flex:1" onclick="planZPull()" title="선택한 실을 보관함으로 빼냅니다(빈 곳은 공용·홀로)">➖ 실 빼기</button>
@@ -7630,7 +7634,7 @@ function _doorsSVG(doors,R,fs){
   return h;
 }
 // ── 조닝 렌더 + 편집 ────────────────────────────────────────────────────────
-function planZSel(i){ const P=S.plan; P.zsel=i; P.zselRoom=null;
+function planZSel(i){ const P=S.plan; P.zsel=i; P.zselRoom=null; P.zselRooms=[];
   // 선택 층의 주진입 방향을 셀렉트에 반영(층별 저장)
   const el=document.getElementById('pl-zentry');
   if(el){ const fe=(P.floorEntry&&P.floorEntry[i])||P.roadEntryDir||el.value; el.value=fe; }
@@ -7695,7 +7699,9 @@ function planZRender(){
   if(L.offD) h+=`<path d="${L.offD}" fill="none" stroke="#e08a3c" stroke-width="${R(fs*.12)}" stroke-dasharray="${R(fs*.5)} ${R(fs*.3)} ${R(fs*.12)} ${R(fs*.3)}"/>`;  // 이격선(건축가능 경계)
   h+=`<path d="${L.buildD}" fill="#ffffff"/><g clip-path="url(#zclip)">`;
   const zWall=R(Math.max(.18,fs*.3));
-  pl.rooms.forEach(r=>{ const sel=(r.id===P.zselRoom);
+  const selSet=new Set((P.zselRooms&&P.zselRooms.length)?P.zselRooms:(P.zselRoom?[P.zselRoom]:[]));
+  const primaryId=(P.zselRooms&&P.zselRooms.length)?P.zselRooms[P.zselRooms.length-1]:P.zselRoom;
+  pl.rooms.forEach(r=>{ const sel=selSet.has(r.id);
     // 매스 void·정북후퇴 = 건물 밖(중정·동사이 이격·외부공지) → 대지 배경색으로 '도려냄' + 파선 라벨
     const carved=(r.cat==='void'||r.cat==='setback');
     if(carved){
@@ -7745,8 +7751,20 @@ function planZRender(){
     const vx=core?core.x+core.w/2:bw*0.16, vy=bd;
     h+=`<circle cx="${R(vx)}" cy="${R(vy)}" r="${R(fs*.42)}" fill="#f2994a" stroke="#fff" stroke-width="${R(fs*.1)}"/>`;
     h+=`<text x="${R(vx)}" y="${R(vy+fs*1.55)}" text-anchor="middle" font-size="${R(fs*.82)}" fill="#d97b1f" font-weight="700" pointer-events="none">▲ 차량(주차)</text>`; }
-  // ── 건축라인 정점 편집 핸들 ─────────────────────────────────────────────────
+  // ── 4면 리사이즈 핸들(선택된 대표 실) — 각 변을 드래그해 크기 조절(인접실 보호) ──────
   const editing=(document.getElementById('pl-shape-edit')||{}).checked;
+  if(!editing && primaryId){ const pr=pl.rooms.find(r=>r.id===primaryId);
+    if(pr && pr.name!=='공용·홀' && pr.name!=='여유' && pr.cat!=='setback' && pr.cat!=='void'){
+      const hw=Math.max(fs*.5,Math.min(pr.w,pr.h)*0.28), th=R(Math.max(.12,fs*.16));
+      const bar=(x,y,w,h2,side)=>`<rect class="zedge" data-zedge="${side}" data-zid="${pr.id}" x="${R(x)}" y="${R(y)}" width="${R(w)}" height="${R(h2)}" rx="${R(fs*.1)}"/>`;
+      const midx=pr.x+pr.w/2, midy=pr.y+pr.h/2;
+      h+=bar(pr.x, midy-hw/2, th, hw, 'l');              // 좌
+      h+=bar(pr.x+pr.w-th, midy-hw/2, th, hw, 'r');      // 우
+      h+=bar(midx-hw/2, pr.y, hw, th, 't');              // 상
+      h+=bar(midx-hw/2, pr.y+pr.h-th, hw, th, 'b');      // 하
+    }
+  }
+  // ── 건축라인 정점 편집 핸들 ─────────────────────────────────────────────────
   if(editing&&P.footPoly) P.footPoly.forEach((p,i)=>{ h+=`<circle class="zvtx" data-vtx="${i}" cx="${R(p[0])}" cy="${R(p[1])}" r="${R(fs*.62)}"/>`; });
   svg.innerHTML=h;
   const flbl=document.getElementById('pl-zfl-lbl'); if(flbl) flbl.textContent=`— ${P.zsel+1}F · ${pl.rooms.filter(r=>r.name!=='공용·홀').length}실`;
@@ -7856,6 +7874,26 @@ function _zFillVoid(pl){ const g=pl.grid, rows=g.rows, cols=g.cols;
     room.gx=c0;room.gy=r0;room.gw=w;room.gh=h; pl.rooms.push(room); }
   pl._voidSeq=idc;
 }
+// 인접실 보호 격자(R·void·여유·공용홀 제외한 실제 실 셀 = true)
+function _zOccGrid(pl, R){ const g=pl.grid, rows=g.rows, cols=g.cols;
+  const occ=Array.from({length:rows},()=>Array(cols).fill(false));
+  pl.rooms.forEach(r=>{ if((R&&r.id===R.id)||r.cat==='void'||r.name==='공용·홀'||r.name==='여유') return;
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<rows&&cc<cols) occ[rr][cc]=true; });
+  return occ; }
+// 4면 리사이즈(인접실 보호): 확장은 빈/void 셀로만(이웃·격자에서 멈춤), 축소는 자유(벌어진 공간=void).
+//  side: 'l'/'r'/'t'/'b', delta: +확장 / -축소 (셀 단위). 인접실은 겹치거나 축소되지 않음.
+function _zEdgeResize(pl, R, side, delta){
+  const g=pl.grid, rows=g.rows, cols=g.cols, occ=_zOccGrid(pl,R);
+  let gx=R.gx, gy=R.gy, gw=R.gw, gh=R.gh;
+  const freeCol=(c,y0,y1)=>{ if(c<0||c>=cols) return false; for(let r=y0;r<y1;r++) if(occ[r][c]) return false; return true; };
+  const freeRow=(r,x0,x1)=>{ if(r<0||r>=rows) return false; for(let c=x0;c<x1;c++) if(occ[r][c]) return false; return true; };
+  if(side==='r'){ if(delta>0){ for(let k=0;k<delta&&freeCol(gx+gw,gy,gy+gh);k++) gw++; } else gw=Math.max(1,gw+delta); }
+  else if(side==='l'){ if(delta>0){ for(let k=0;k<delta&&freeCol(gx-1,gy,gy+gh);k++){ gx--; gw++; } } else { const d=Math.min(-delta,gw-1); gx+=d; gw-=d; } }
+  else if(side==='b'){ if(delta>0){ for(let k=0;k<delta&&freeRow(gy+gh,gx,gx+gw);k++) gh++; } else gh=Math.max(1,gh+delta); }
+  else if(side==='t'){ if(delta>0){ for(let k=0;k<delta&&freeRow(gy-1,gx,gx+gw);k++){ gy--; gh++; } } else { const d=Math.min(-delta,gh-1); gy+=d; gh-=d; } }
+  const changed=(gx!==R.gx||gy!==R.gy||gw!==R.gw||gh!==R.gh);
+  R.gx=gx;R.gy=gy;R.gw=gw;R.gh=gh; return changed;
+}
 // 조닝 실 크기 변경 → 스페이스 프로그램 면적 역반영(상관관계). key 매칭 실의 면적 갱신.
 function _zSyncProgram(R){
   const P=S.plan, pl=P.cache[P.zsel]; if(!R||!R.key||!pl||!pl.grid) return;
@@ -7878,39 +7916,66 @@ function _zFillHall(pl){ const g=pl.grid;
     room.gx=c0;room.gy=r0;room.gw=w;room.gh=h; pl.rooms.push(room); }
   pl._hallSeq=idc;
 }
-// 실 이동(유동식) — 드래그한 실을 드롭 위치로. 침범된 인접실은 침범량만큼 변형, 원위치·벌어진 공간은 void.
+// 선택 집합(다중선택) 헬퍼 — P.zselRooms(배열) 우선, 없으면 P.zselRoom 단일
+function _zSelSet(){ const P=S.plan; if(P.zselRooms&&P.zselRooms.length) return P.zselRooms.slice(); return P.zselRoom?[P.zselRoom]:[]; }
+function _zSelPrimary(){ const s=_zSelSet(); return s.length?s[s.length-1]:null; }
+// 실 이동 — 선택된 실(다중 가능)을 (dc,dr)만큼 함께 이동. 인접(비선택) 실은 겹치지 않게 보호, 벌어진 공간=void.
+function planZMoveSel(dc, dr){
+  const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return false;
+  const g=pl.grid, ids=_zSelSet().filter(id=>{ const r=pl.rooms.find(x=>x.id===id); return r&&r.cat!=='setback'&&r.cat!=='void'&&r.name!=='여유'&&r.name!=='공용·홀'; });
+  if(!ids.length) return false;
+  const sel=ids.map(id=>pl.rooms.find(r=>r.id===id)); const selSet=new Set(ids);
+  // 비선택 실 점유격자
+  const occ=Array.from({length:g.rows},()=>Array(g.cols).fill(false));
+  pl.rooms.forEach(r=>{ if(selSet.has(r.id)||r.cat==='void'||r.name==='공용·홀'||r.name==='여유') return;
+    for(let rr=r.gy;rr<r.gy+r.gh;rr++)for(let cc=r.gx;cc<r.gx+r.gw;cc++) if(rr>=0&&cc>=0&&rr<g.rows&&cc<g.cols) occ[rr][cc]=true; });
+  // 그룹 전체가 격자 안 + 비선택 실과 안 겹치면 이동
+  const ok=sel.every(r=>{ const nx=r.gx+dc, ny=r.gy+dr;
+    if(nx<0||ny<0||nx+r.gw>g.cols||ny+r.gh>g.rows) return false;
+    for(let rr=ny;rr<ny+r.gh;rr++)for(let cc=nx;cc<nx+r.gw;cc++) if(occ[rr][cc]) return false; return true; });
+  if(!ok) return false;
+  sel.forEach(r=>{ r.gx+=dc; r.gy+=dr; });
+  _zFillVoid(pl); _zCommit(pl); sel.forEach(r=>_zSyncProgram(r)); _zSelInfo(_zSelPrimary()); return true;
+}
+// 단일 실 드롭(드래그) — 인접실 보호(겹침 금지). 놓을 위치가 막히면 이동 취소.
 function planZDrop(id, dropGx, dropGy){
   const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
-  const g=pl.grid; const R=pl.rooms.find(r=>r.id===id);
-  if(!R||R.cat==='setback'||R.cat==='void'||R.name==='여유') return;
-  dropGx=Math.max(0,Math.min(g.cols-R.gw,dropGx)); dropGy=Math.max(0,Math.min(g.rows-R.gh,dropGy));
-  const ok=_zFluidApply(pl, R, dropGx, dropGy, R.gw, R.gh);
-  if(!ok){ showSt('run-status','sb-warn','코어·후퇴영역은 침범할 수 없습니다',false); planZRender(); return; }
-  _zFillVoid(pl); P.zselRoom=R.id; _zCommit(pl); _zSyncProgram(R); _zSelInfo(R.id);
+  const R=pl.rooms.find(r=>r.id===id);
+  if(!R||R.cat==='setback'||R.cat==='void'||R.name==='여유'){ planZRender(); return; }
+  // 다중 선택 중이고 R이 그 일부면 그룹 이동
+  const sel=_zSelSet();
+  if(sel.length>1 && sel.indexOf(id)>=0){ if(!planZMoveSel(dropGx-R.gx, dropGy-R.gy)) showSt('run-status','sb-warn','인접 실과 겹쳐 이동 불가',false); return; }
+  const g=pl.grid; dropGx=Math.max(0,Math.min(g.cols-R.gw,dropGx)); dropGy=Math.max(0,Math.min(g.rows-R.gh,dropGy));
+  P.zselRoom=id; P.zselRooms=[id];
+  if(!planZMoveSel(dropGx-R.gx, dropGy-R.gy)) showSt('run-status','sb-warn','인접 실과 겹쳐 이동 불가 — 빈 공간(void)으로 옮기세요',false);
 }
-// 방향키/버튼 이동 — 한 칸씩 (같은 free-move 규칙)
+// 방향키/버튼 이동 — 선택 실(다중) 한 칸씩
 function planZMove(dc,dr){
   const P=S.plan; const pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
   if(dc===0&&dr===0){ planZAuto(); return; }
-  if(!P.zselRoom){ showSt('run-status','sb-warn','먼저 이동할 실을 클릭해 선택하세요',false); return; }
-  const R=pl.rooms.find(r=>r.id===P.zselRoom); if(!R||R.name==='공용·홀'||R.cat==='setback') return;
-  planZDrop(R.id, R.gx+dc, R.gy+dr);
+  if(!_zSelSet().length){ showSt('run-status','sb-warn','먼저 이동할 실을 클릭해 선택하세요',false); return; }
+  if(!planZMoveSel(dc,dr)) showSt('run-status','sb-warn','인접 실과 겹쳐 이동 불가 — 반대편에 여유(void)가 있어야 합니다',false);
 }
-// 선택 실 크기 조정(유동식, ±1칸) — 확장 시 접한 실이 침범량만큼 변형(밀지 않음), 축소 시 벌어진 공간=void.
-//  스페이스 프로그램 면적에 역반영(_zSyncProgram).
+// 선택 실 크기 조정(4면, 인접실 보호) — 확장은 빈/void로만, 축소는 void 생성. ⇥⇤=폭(우측면), ⤓⤒=높이(하단면).
 function planZSize(dw,dh){
   const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
-  if(!P.zselRoom){ showSt('run-status','sb-warn','먼저 조정할 실을 클릭해 선택하세요',false); return; }
-  const g=pl.grid, R=pl.rooms.find(r=>r.id===P.zselRoom);
+  const R=pl.rooms.find(r=>r.id===_zSelPrimary());
   if(!R||R.name==='공용·홀'||R.name==='여유'||R.cat==='setback'||R.cat==='void'){ showSt('run-status','sb-warn','실(전용·공용실)을 선택하세요',false); return; }
-  let ngw=Math.max(1,R.gw+dw), ngh=Math.max(1,R.gh+dh);
-  if(R.gx+ngw>g.cols) ngw=g.cols-R.gx; if(R.gy+ngh>g.rows) ngh=g.rows-R.gy;
-  const ok=_zFluidApply(pl, R, R.gx, R.gy, ngw, ngh);
-  if(!ok){ showSt('run-status','sb-warn','코어·후퇴영역은 침범할 수 없습니다',false); return; }
+  let ch=false;
+  if(dw>0) ch=_zEdgeResize(pl,R,'r',1)||ch; else if(dw<0) ch=_zEdgeResize(pl,R,'r',-1)||ch;
+  if(dh>0) ch=_zEdgeResize(pl,R,'b',1)||ch; else if(dh<0) ch=_zEdgeResize(pl,R,'b',-1)||ch;
+  if(!ch){ showSt('run-status','sb-warn','인접 실에 막혀 확장 불가 — 반대로 축소하거나 실을 옮기세요',false); return; }
   _zFillVoid(pl); _zCommit(pl); _zSyncProgram(R); _zSelInfo(R.id);
 }
+// 4면 드래그 리사이즈(1면) — side='l'/'r'/'t'/'b', delta 셀. 인접실 보호.
+function planZEdgeDrag(id, side, delta){
+  const P=S.plan, pl=P.cache[P.zsel]; if(!pl||!pl.grid) return;
+  const R=pl.rooms.find(r=>r.id===id); if(!R||R.name==='공용·홀'||R.name==='여유'||R.cat==='setback'||R.cat==='void') return;
+  if(_zEdgeResize(pl,R,side,delta)){ _zFillVoid(pl); _zCommit(pl); _zSyncProgram(R); _zSelInfo(R.id); }
+  else planZRender();
+}
 function planZAuto(){ const P=S.plan; if(P.zsel==null) P.zsel=0;
-  P.cache[P.zsel]=planZonePack(P.zsel); P.zselRoom=null;
+  P.cache[P.zsel]=planZonePack(P.zsel); P.zselRoom=null; P.zselRooms=[];
   planZRender(); planRenderProgram(); planRenderChecks();
   const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }
 // ── 퍼즐식 편집: 선택 실을 보관함(트레이)으로 빼내기 ──────────────────────────
@@ -7975,11 +8040,16 @@ function planZAutoSafe(){ const P=S.plan;
   try{ P.cache=Array.from({length:P.floors},(_,i)=>planZonePack(i)); planZRender(); planRenderProgram(); planRenderChecks();
     const ps3=document.getElementById('pstep3'); if(ps3&&ps3.classList.contains('on')) planRenderSVG(); }catch(e){}
 }
-// 실 선택 정보 표시
+// 실 선택 정보 표시 (다중 선택 시 개수·합면적)
 function _zSelInfo(zid){
-  const pl=S.plan.cache[S.plan.zsel]; const r=pl&&pl.rooms.find(x=>x.id===zid);
-  const info=document.getElementById('pl-zsel');
-  if(info&&r){ info.style.display='flex'; info.innerHTML=`<b>${r.name||PLAN_CAT_LABEL[r.cat]}</b> · ${fmt1(r.w)}×${fmt1(r.h)}m · ${fmt1(r.area)}m² — 드래그하거나 방향키로 이동`; }
+  const P=S.plan, pl=P.cache[P.zsel]; const info=document.getElementById('pl-zsel'); if(!info||!pl) return;
+  const sel=(P.zselRooms&&P.zselRooms.length)?P.zselRooms:(zid?[zid]:[]);
+  if(sel.length>1){ const rs=sel.map(id=>pl.rooms.find(x=>x.id===id)).filter(Boolean);
+    const a=rs.reduce((s,r)=>s+r.area,0);
+    info.style.display='flex'; info.innerHTML=`<b>${sel.length}개 실 선택</b> · 합 ${fmt1(a)}m² — 방향키/드래그로 함께 이동`; return; }
+  const r=pl.rooms.find(x=>x.id===(sel[0]||zid));
+  if(r){ info.style.display='flex'; info.innerHTML=`<b>${r.name||PLAN_CAT_LABEL[r.cat]}</b> · ${fmt1(r.w)}×${fmt1(r.h)}m · ${fmt1(r.area)}m² — 4면 핸들 드래그로 크기조절 · Shift+클릭 다중선택`; }
+  else info.style.display='none';
 }
 // SVG 좌표(뷰박스) → 그리드 셀
 function _zSvgCell(svg,e,pl){
@@ -8001,23 +8071,37 @@ function _zSvgXY(svg,e){
   function killGhost(){ if(drag&&drag.ghost){ drag.ghost.remove(); drag.ghost=null; }
     svg.querySelectorAll('.zcell-room.drop-target,.zcell-room.z-lift').forEach(el=>{el.classList.remove('drop-target');el.classList.remove('z-lift');}); }
   svg.addEventListener('pointerdown',function(e){
+    const P=S.plan; const ds=e.target.dataset||{};
     // ① 건축라인 정점 편집(핸들)
-    const vtx=e.target.dataset?e.target.dataset.vtx:null;
-    if(vtx!=null){ drag={vtx:+vtx,x0:e.clientX,y0:e.clientY,moved:false};
+    if(ds.vtx!=null){ drag={vtx:+ds.vtx,x0:e.clientX,y0:e.clientY,moved:false};
       try{ svg.setPointerCapture(e.pointerId); }catch(_){} e.preventDefault(); return; }
-    // ② 실 이동
-    const zid=e.target.dataset?e.target.dataset.zid:null; if(!zid) return;
-    const pl=S.plan.cache[S.plan.zsel]; const r=pl&&pl.rooms.find(x=>x.id===zid);
-    if(!r||r.name==='공용·홀'||r.cat==='setback'){ S.plan.zselRoom=zid; _zSelInfo(zid); planZRender(); return; }  // 배경(홀)·일조후퇴는 선택만
-    S.plan.zselRoom=zid; _zSelInfo(zid); planZRender();
-    const xy=_zSvgXY(svg,e), g=pl.grid;
-    drag={id:zid,x0:e.clientX,y0:e.clientY,moved:false,g,w:r.w,h:r.h,nx:r.x,ny:r.y,
+    const pl=P.cache[P.zsel]; if(!pl||!pl.grid) return; const g=pl.grid;
+    // ② 4면 리사이즈 핸들 드래그
+    if(ds.zedge){ drag={edge:ds.zedge,id:ds.zid,x0:e.clientX,y0:e.clientY,g,moved:false,acc:0};
+      try{ svg.setPointerCapture(e.pointerId); }catch(_){} e.preventDefault(); return; }
+    // ③ 실 선택/이동
+    const zid=ds.zid; if(!zid) return;
+    const r=pl.rooms.find(x=>x.id===zid); if(!r) return;
+    const multi=(e.shiftKey||e.ctrlKey||e.metaKey);
+    if(multi){   // 다중 선택 토글(홀·void 제외)
+      if(r.name==='공용·홀'||r.name==='여유'||r.cat==='setback'||r.cat==='void') return;
+      P.zselRooms=_zSelSet(); const i=P.zselRooms.indexOf(zid);
+      if(i>=0) P.zselRooms.splice(i,1); else P.zselRooms.push(zid);
+      P.zselRoom=P.zselRooms[P.zselRooms.length-1]||null; _zSelInfo(P.zselRoom); planZRender(); return;
+    }
+    // 단일 선택(기존 다중 선택 유지: 이미 선택된 실을 다시 클릭하면 그 그룹 이동)
+    const inSel=(_zSelSet().indexOf(zid)>=0);
+    if(!inSel){ P.zselRooms=[zid]; P.zselRoom=zid; }
+    _zSelInfo(zid); planZRender();
+    if(r.name==='공용·홀'||r.name==='여유'||r.cat==='setback'){ return; }   // 배경·후퇴는 선택만
+    const xy=_zSvgXY(svg,e);
+    drag={id:zid,x0:e.clientX,y0:e.clientY,moved:false,g,w:r.w,h:r.h,nx:r.x,ny:r.y,gx0:r.gx,gy0:r.gy,
           offx:xy?xy[0]-r.x:r.w/2, offy:xy?xy[1]-r.y:r.h/2};
-    const orig=svg.querySelector('[data-zid="'+zid+'"]'); if(orig) orig.style.opacity='.25';
     const gh=document.createElementNS(SVGNS,'rect'); gh.setAttribute('class','zghost');
     gh.setAttribute('x',RD(r.x)); gh.setAttribute('y',RD(r.y));
     gh.setAttribute('width',RD(r.w)); gh.setAttribute('height',RD(r.h));
     svg.appendChild(gh); drag.ghost=gh;
+    const orig=svg.querySelector('.zcell-room[data-zid="'+zid+'"]'); if(orig) orig.style.opacity='.25';
     try{ svg.setPointerCapture(e.pointerId); }catch(_){}
     e.preventDefault();
   });
@@ -8025,12 +8109,20 @@ function _zSvgXY(svg,e){
     if(!drag) return;
     if(Math.abs(e.clientX-drag.x0)>3||Math.abs(e.clientY-drag.y0)>3) drag.moved=true;
     const xy=_zSvgXY(svg,e); if(!xy) return;
-    if(drag.vtx!=null){ // 정점 드래그 — 이격선(없으면 대지) 안으로만 제한 → 이격거리 준수
-      const P=S.plan; if(!P.footPoly) return;
+    if(drag.vtx!=null){ const P=S.plan; if(!P.footPoly) return;
       const bound=(P.offPoly&&P.offPoly.length>=3)?P.offPoly:P.sitePoly;
       if(!bound || _pointInPoly(xy,bound)){ P.footPoly[drag.vtx]=[xy[0],xy[1]]; planZRender(); }
       return; }
     const g=drag.g;
+    if(drag.edge){   // 4면 리사이즈 — 드래그 이동량을 셀 단위로 환산해 즉시 적용
+      const pl=S.plan.cache[S.plan.zsel]; const R=pl&&pl.rooms.find(r=>r.id===drag.id); if(!R) return;
+      let want=0;
+      if(drag.edge==='r') want=Math.round((xy[0]-(R.x+R.w))/g.cw);
+      else if(drag.edge==='l') want=Math.round(((R.x)-xy[0])/g.cw);
+      else if(drag.edge==='b') want=Math.round((xy[1]-(R.y+R.h))/g.ch);
+      else if(drag.edge==='t') want=Math.round(((R.y)-xy[1])/g.ch);
+      if(want!==0){ planZEdgeDrag(drag.id, drag.edge, want>0?1:-1); }
+      return; }
     let gx=Math.round((xy[0]-drag.offx)/g.cw), gy=Math.round((xy[1]-drag.offy)/g.ch);
     gx=Math.max(0,Math.min(g.cols-Math.round(drag.w/g.cw),gx));
     gy=Math.max(0,Math.min(g.rows-Math.round(drag.h/g.ch),gy));
@@ -8039,10 +8131,11 @@ function _zSvgXY(svg,e){
   });
   svg.addEventListener('pointerup',function(e){
     if(!drag) return; const d=drag; killGhost(); drag=null;
-    if(d.vtx!=null){ if(d.moved) _applyFootEdit(true); else planZRender(); return; }  // 형상 확정→재패킹
+    if(d.vtx!=null){ if(d.moved) _applyFootEdit(true); else planZRender(); return; }
+    if(d.edge){ planZRender(); return; }
     const pl=S.plan.cache[S.plan.zsel];
     if(pl&&pl.grid&&d.moved&&d.gx!=null){ planZDrop(d.id,d.gx,d.gy); return; }
-    planZRender();   // 이동 없음 → 흐림 원복
+    planZRender();
   });
   svg.addEventListener('pointercancel',function(){ if(drag){ killGhost(); drag=null; planZRender(); } });
 })();
