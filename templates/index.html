@@ -1170,6 +1170,8 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
              <option value="wing">ㄷ자형 (두 날개)</option>
              <option value="split">분동 (2개동+연결)</option>
              <option value="L">L형 (모서리 공지)</option>
+             <option value="T">T자형 (양 코너 공지)</option>
+             <option value="Z">Z자형 (엇갈림 공지)</option>
            </select>
            <div id="pl-massnote" style="font-size:10px;color:var(--muted);margin-top:4px">중정·분동·L·ㄷ자 모두 <b>전 용도</b> 반영(복도형=수평/수직 복도, 허브형=가장자리 노치). 파낸 부분=중정/외부공지. 법규(건폐·용적) 한도 내 자동.</div>
            <!-- 분동 이동·이격 조정 -->
@@ -7121,32 +7123,34 @@ function planZonePack(fi){
   //  허브형(주거·근생 등): void를 '가장자리 노치'로 파냄 → 내부 실 영역이 연속 유지(격리 방지·허브 도달 확보).
   //  코어 배치 후 실행(빈 셀만 파냄 → 코어와 겹침 방지). L은 코어 반대편 코너.
   if(massEff && !useCorridor && !splitDual){
-    const rY=solarRows, rH=rows-solarRows, rW=cols; const vc=[];
+    const rY=solarRows, rH=rows-solarRows, rW=cols;
     const coreRight=(coreW>0 && coreX0+coreW>=cols);   // 코어가 우측이면 L void는 좌측
     const entryBottom=(entryDir==='south'||entryDir==='east');   // 진입측=하단(gy 큰 쪽)
-    // 노치 최대 깊이 = 후면 밴드 3칸 이상 남기기(잔여 실 영역이 연속·건강한 밴드가 되도록)
-    const maxVh=Math.max(2,Math.min(Math.round(rH*0.34), rH-3));
-    if(massForm==='court'){                    // 중정형(허브): 진입 반대(후면) 가장자리 노치
+    const maxVh=Math.max(2,Math.min(Math.round(rH*0.34), rH-3));   // 후면 밴드 3칸+ 남김(연속 유지)
+    const rect=(x,y,w,h)=>{ const cs=[]; for(let r=y;r<y+h;r++)for(let c=x;c<x+w;c++) cs.push([r,c]); return cs; };
+    const regions=[];   // 다중 노치(T·Z) 지원 — 각 영역이 독립 void
+    if(massForm==='court'){                    // 중정형: 후면 중앙 노치
       const vw=Math.max(2,Math.round(rW*0.28)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.28)));
-      const vx=Math.floor((rW-vw)/2), vy=entryBottom?rY:(rows-vh);
-      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
-    } else if(massForm==='wing'||massForm==='split'){   // ㄷ자/분동: 진입 반대측 중앙 노치 → 두 날개(허브 밴드로 연결)
-      const deep=(massForm==='split');                  // 분동=더 깊은 노치(두 동 느낌), 잔여 밴드가 연결 유지
+      regions.push({name:'중정', cells:rect(Math.floor((rW-vw)/2), entryBottom?rY:(rows-vh), vw, vh)});
+    } else if(massForm==='wing'||massForm==='split'){   // ㄷ자/분동: 후면 중앙 노치(두 날개)
+      const deep=(massForm==='split');
       const vw=Math.max(2,Math.round(rW*(deep?0.20:0.30))), vh=Math.max(2,Math.min(maxVh,Math.round(rH*(deep?0.34:0.30))));
-      const vx=Math.floor((rW-vw)/2), vy=entryBottom?rY:(rows-vh);
-      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
-    } else if(massForm==='L'){                  // L형: 코어 반대편 후면 코너 void(외부공지·마당)
+      regions.push({name:deep?'동 사이 이격':'중정(개방)', cells:rect(Math.floor((rW-vw)/2), entryBottom?rY:(rows-vh), vw, vh)});
+    } else if(massForm==='L'){                  // L형: 코어 반대편 후면 코너
       const vw=Math.max(2,Math.round(rW*0.32)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.30)));
-      const vx=coreRight?0:(cols-vw), vy=entryBottom?rY:(rows-vh);
-      for(let r=vy;r<vy+vh;r++)for(let c=vx;c<vx+vw;c++) vc.push([r,c]);
+      regions.push({name:'외부공지', cells:rect(coreRight?0:(cols-vw), entryBottom?rY:(rows-vh), vw, vh)});
+    } else if(massForm==='T'){                  // T자: 후면 양 코너 노치 → 중앙 스템
+      const vw=Math.max(2,Math.round(rW*0.24)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.28))), vy=entryBottom?rY:(rows-vh);
+      regions.push({name:'외부공지', cells:rect(0,vy,vw,vh)}, {name:'외부공지', cells:rect(rW-vw,vy,vw,vh)});
+    } else if(massForm==='Z'){                  // 엇갈림(Z): 후면-좌 + 진입측-우 대각 노치
+      const vw=Math.max(2,Math.round(rW*0.28)), vh=Math.max(2,Math.min(maxVh,Math.round(rH*0.26)));
+      const vyFar=entryBottom?rY:(rows-vh), vyEnt=entryBottom?(rows-vh):rY;
+      regions.push({name:'외부공지', cells:rect(0,vyFar,vw,vh)}, {name:'외부공지', cells:rect(rW-vw,vyEnt,vw,vh)});
     }
-    if(vc.length){
-      const nm={court:'중정',wing:'중정(개방)',split:'동 사이 이격',L:'외부공지'}[massForm]||'외부';
-      const vd={id:nid(),name:nm,cat:'void',zone:'ext',adj:[]};
+    regions.forEach(reg=>{ const vd={id:nid(),name:reg.name,cat:'void',zone:'ext',adj:[]};
       let mnx=1e9,mny=1e9,mxx=-1,mxy=-1;
-      vc.forEach(([r,c])=>{ if(r>=0&&c>=0&&r<rows&&c<cols&&grid[r][c]==null){ grid[r][c]=vd.id; mnx=Math.min(mnx,c);mny=Math.min(mny,r);mxx=Math.max(mxx,c);mxy=Math.max(mxy,r); } });
-      if(mxx>=0){ vd.gx=mnx;vd.gy=mny;vd.gw=mxx-mnx+1;vd.gh=mxy-mny+1; rooms.push(vd); P._massVoid=true; }
-    }
+      reg.cells.forEach(([r,c])=>{ if(r>=0&&c>=0&&r<rows&&c<cols&&grid[r][c]==null){ grid[r][c]=vd.id; mnx=Math.min(mnx,c);mny=Math.min(mny,r);mxx=Math.max(mxx,c);mxy=Math.max(mxy,r); } });
+      if(mxx>=0){ vd.gx=mnx;vd.gy=mny;vd.gw=mxx-mnx+1;vd.gh=mxy-mny+1; rooms.push(vd); P._massVoid=true; } });
   }
   const coreArea=rooms.filter(r=>r.cat==='core').reduce((a,r)=>a+r.gw*r.gh*cellA,0);
   const usableArea=Math.max(cellA,(rows*cols - rooms.reduce((a,r)=>a+r.gw*r.gh,0))*cellA);
@@ -7385,9 +7389,9 @@ function planZonePack(fi){
         Vright=carveVoid(corrX+1, gy, wr, gh, '동 사이 이격');
       } else {
         let V=null;
-        if(massForm==='court' && farW>=2) V=carveVoid(farX, cy, farW, vh, '중정');
+        if((massForm==='court'||massForm==='T') && farW>=2) V=carveVoid(farX, cy, farW, vh, massForm==='T'?'외부공지':'중정');
         else if(massForm==='wing' && entryW>=2) V=carveVoid(entryX, cy, entryW, vh, '중정(개방)');
-        else if(massForm==='L' && farW>=2) V=carveVoid(farX, Ry, farW, vh, '외부공지');
+        else if((massForm==='L'||massForm==='Z') && farW>=2) V=carveVoid(farX, Ry, farW, vh, '외부공지');
         Vleft=V; Vright=V;
       }
     }
@@ -7415,10 +7419,10 @@ function planZonePack(fi){
         Vbot=carveVoid(gx, corrY+1, gw, hb, '동 사이 이격');
       } else {
         let V=null;
-        if(massForm==='court' && farH>=2) V=carveVoid(cx, farY, vw, farH, '중정');            // 후면 밴드 중앙 = 중정
+        if((massForm==='court'||massForm==='T') && farH>=2) V=carveVoid(cx, farY, vw, farH, massForm==='T'?'외부공지':'중정');   // 후면 중앙(T=복도형에선 중앙 공지)
         else if(massForm==='wing' && entryH>=2) V=carveVoid(cx, entryY, vw, entryH, '중정(개방)'); // 진입측 개방 중정 → 두 날개
-        else if(massForm==='L' && farH>=2){ const coreRight=(coreW>0&&coreX0+coreW>=cols);
-          V=carveVoid(coreRight?Rx:(Rx+Rw-vw), farY, vw, farH, '외부공지'); }                  // 코어 반대 코너
+        else if((massForm==='L'||massForm==='Z') && farH>=2){ const coreRight=(coreW>0&&coreX0+coreW>=cols);
+          V=carveVoid(coreRight?Rx:(Rx+Rw-vw), farY, vw, farH, '외부공지'); }                  // 코어 반대 코너(Z=복도형에선 L 유사)
         Vtop=V; Vbot=V;   // 단일 void는 겹치는 밴드에만 적용됨(placeBandWithVoid가 행 판정)
       }
     }
