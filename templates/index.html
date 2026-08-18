@@ -1449,7 +1449,22 @@ const S = {
 // 물리 pane 순서: p0=필지입력 | p1=규모산정 | p2=법규검토 | p3=사업성 | p4=3D | p5=계획설계
 const _TAB_PANE = [0, 2, 1, 3, 5, 4]; // 논리 인덱스 → 물리 pane 번호
 
+// 건축계획 프로세스 순서 게이팅 — 선행 단계 미완 시 다음 탭 진입 차단(순서: 필지→법규→규모→사업성→계획→3D)
+function _tabReady(i){
+  if(i<=0) return true;
+  if(!S.checkResult) return {ok:false, msg:'먼저 ① 필지 입력에서 필지를 검색하고 「법규 검토 실행」을 눌러주세요.'};
+  if(i>=4){   // 계획설계·3D → 규모 산정(층수) 선행 필요
+    const hasScale = (S.plan&&S.plan.floors>0) || S.scale3DScenario || (S.checkResult&&S.checkResult.max_floors>0);
+    if(!hasScale) return {ok:false, msg:'먼저 ③ 규모 산정에서 층수·규모 시나리오를 선택해주세요.'};
+  }
+  return true;
+}
 function goTab(i){
+  const rdy=_tabReady(i);
+  if(rdy!==true){   // 선행 미완 → 진입 차단 + 안내
+    try{ showSt('run-status','sb-warn', rdy.msg, false); }catch(_){ alert(rdy.msg); }
+    return;
+  }
   for(let k=0;k<6;k++){
     document.getElementById('p'+_TAB_PANE[k]).classList.toggle('on',k===i);
     document.querySelectorAll('.tb')[k].classList.toggle('on',k===i);
