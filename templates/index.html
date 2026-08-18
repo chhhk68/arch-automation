@@ -7933,13 +7933,18 @@ function _zEdgeResize(pl, R, side, delta){
   for(let k=0;k<n;k++){ if(_zEdgeStep(pl,R,side,grow)) any=true; else break; }
   return any;
 }
-// 조닝 실 크기 변경 → 스페이스 프로그램 면적 역반영(상관관계). key 매칭 실의 면적 갱신.
+// 조닝 실 크기 변경 → 스페이스 프로그램 면적 역반영(완전 양방향). 같은 key 실들의 평균면적을 프로그램에 반영.
 function _zSyncProgram(R){
   const P=S.plan, pl=P.cache[P.zsel]; if(!R||!R.key||!pl||!pl.grid) return;
   try{ const use=P.floorUses[P.zsel]||P.use; const prog=planSPGet(use);
-    const it=(prog||[]).find(x=>(x.k||x.key)===R.key);
-    if(it){ it.area=Math.max(1,Math.round(R.gw*R.gh*pl.grid.cw*pl.grid.ch)); it._userArea=true;
-      const zp=document.getElementById('sp-tbl'); if(zp&&P.step===1&&typeof planSPRender==='function') planSPRender(); } }catch(e){}
+    const it=(prog||[]).find(x=>(x.k||x.key)===R.key); if(!it) return;
+    const cellA=pl.grid.cw*pl.grid.ch;
+    const same=pl.rooms.filter(r=>r.key===R.key && r.cat!=='void');   // 다중 인스턴스=평균 실당면적
+    const avg=same.length?same.reduce((s,r)=>s+r.gw*r.gh,0)/same.length*cellA:R.gw*R.gh*cellA;
+    it.area=Math.max(1,Math.round(avg)); it._userArea=true;
+    if(P.step===1 && typeof planSPRender==='function') planSPRender();
+    else if(typeof planSPSummary==='function') planSPSummary(use);   // 다른 탭이면 요약만 갱신
+  }catch(e){}
 }
 // 빈 셀(공용·홀=배경)을 직사각형으로 병합해 다시 채움 — 실 이동 후 호출
 function _zFillHall(pl){ const g=pl.grid;
