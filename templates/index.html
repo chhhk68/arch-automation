@@ -5401,21 +5401,33 @@ function _archSVG(pl,R,fs,bw,bd){
       ? `<path d="M ${R(mx)} ${R(y1)} L ${R(mx)} ${R(y0)} M ${R(mx-aw)} ${R(y0+aw*1.5)} L ${R(mx)} ${R(y0)} L ${R(mx+aw)} ${R(y0+aw*1.5)}" fill="none" stroke="${st}" stroke-width="${sw}"/>`
       : `<path d="M ${R(x0)} ${R(my)} L ${R(x1)} ${R(my)} M ${R(x1-aw*1.5)} ${R(my-aw)} L ${R(x1)} ${R(my)} L ${R(x1-aw*1.5)} ${R(my+aw)}" fill="none" stroke="${st}" stroke-width="${sw}"/>`;
   }
-  // ③ 치수선 — 하단 전폭 / 좌측 전깊이 (45° 틱)
-  const dl=R(Math.max(.05,fs*.08)), off=fs*1.9, ex=fs*.55, dim='#7a869c', extc='#c2cbdb';
-  const tk=(x,y)=>`<line x1="${R(x-fs*.22)}" y1="${R(y+fs*.22)}" x2="${R(x+fs*.22)}" y2="${R(y-fs*.22)}" stroke="${dim}" stroke-width="${dl}"/>`;
-  const dy=bd+off;
-  h+=`<line x1="0" y1="${R(dy)}" x2="${R(bw)}" y2="${R(dy)}" stroke="${dim}" stroke-width="${dl}"/>`
-   + `<line x1="0" y1="${R(bd+ex*.4)}" x2="0" y2="${R(dy+ex)}" stroke="${extc}" stroke-width="${dl}"/>`
-   + `<line x1="${R(bw)}" y1="${R(bd+ex*.4)}" x2="${R(bw)}" y2="${R(dy+ex)}" stroke="${extc}" stroke-width="${dl}"/>`
-   + tk(0,dy)+tk(bw,dy)
-   + `<text x="${R(bw/2)}" y="${R(dy-fs*.32)}" text-anchor="middle" font-size="${R(fs*.85)}" fill="#5a6b86" font-weight="600">${fmt1(bw)} m</text>`;
-  const dx=-off;
-  h+=`<line x1="${R(dx)}" y1="0" x2="${R(dx)}" y2="${R(bd)}" stroke="${dim}" stroke-width="${dl}"/>`
-   + `<line x1="${R(dx-ex)}" y1="0" x2="${R(-ex*.4)}" y2="0" stroke="${extc}" stroke-width="${dl}"/>`
-   + `<line x1="${R(dx-ex)}" y1="${R(bd)}" x2="${R(-ex*.4)}" y2="${R(bd)}" stroke="${extc}" stroke-width="${dl}"/>`
-   + tk(dx,0)+tk(dx,bd)
-   + `<text x="${R(dx-fs*.38)}" y="${R(bd/2)}" text-anchor="middle" font-size="${R(fs*.85)}" fill="#5a6b86" font-weight="600" transform="rotate(-90 ${R(dx-fs*.38)} ${R(bd/2)})">${fmt1(bd)} m</text>`;
+  // ③ 치수선(실제 도면표기법) — 상단: 실별 폭 체인 + 전폭 / 좌측: 실별 깊이 체인 + 전깊이. 45° 틱.
+  const dl=R(Math.max(.05,fs*.08)), ex=fs*.5, dim='#8592a8', extc='#c7d0e0';
+  const off1=fs*1.15, off2=fs*2.5;   // off1=실별 체인, off2=전체 치수
+  const tk=(x,y)=>`<line x1="${R(x-fs*.2)}" y1="${R(y+fs*.2)}" x2="${R(x+fs*.2)}" y2="${R(y-fs*.2)}" stroke="${dim}" stroke-width="${dl}"/>`;
+  const rnd=v=>Math.round(v*100)/100;
+  // 실 경계 벽선 좌표(중복 제거) — 실별 치수 체인 기준
+  const noS=(pl.rooms||[]).filter(r=>r.cat!=='setback');
+  const xs=[...new Set(noS.flatMap(r=>[rnd(r.x),rnd(r.x+r.w)]))].filter(v=>v>=-0.05&&v<=bw+0.05).sort((a,b)=>a-b);
+  const ys=[...new Set(noS.flatMap(r=>[rnd(r.y),rnd(r.y+r.h)]))].filter(v=>v>=-0.05&&v<=bd+0.05).sort((a,b)=>a-b);
+  // ── 상단: 실별 폭 체인(off1) + 전폭(off2) ──
+  const cyT=-off1;
+  h+=`<line x1="0" y1="${R(cyT)}" x2="${R(bw)}" y2="${R(cyT)}" stroke="${dim}" stroke-width="${dl}"/>`;
+  xs.forEach(x=>{ h+=`<line x1="${R(x)}" y1="${R(cyT-ex*.45)}" x2="${R(x)}" y2="${R(bd>0?0:cyT)}" stroke="${extc}" stroke-width="${R(dl*.7)}"/>`+tk(x,cyT); });
+  for(let i=0;i<xs.length-1;i++){ const seg=xs[i+1]-xs[i]; if(seg<0.8) continue;
+    h+=`<text x="${R((xs[i]+xs[i+1])/2)}" y="${R(cyT-fs*.24)}" text-anchor="middle" font-size="${R(fs*.6)}" fill="#7a869c">${fmt1(seg)}</text>`; }
+  const dyT=-off2;
+  h+=`<line x1="0" y1="${R(dyT)}" x2="${R(bw)}" y2="${R(dyT)}" stroke="${dim}" stroke-width="${dl}"/>`+tk(0,dyT)+tk(bw,dyT)
+   +`<text x="${R(bw/2)}" y="${R(dyT-fs*.3)}" text-anchor="middle" font-size="${R(fs*.82)}" fill="#5a6b86" font-weight="600">${fmt1(bw)} m</text>`;
+  // ── 좌측: 실별 깊이 체인(off1) + 전깊이(off2) ──
+  const cxL=-off1;
+  h+=`<line x1="${R(cxL)}" y1="0" x2="${R(cxL)}" y2="${R(bd)}" stroke="${dim}" stroke-width="${dl}"/>`;
+  ys.forEach(y=>{ h+=`<line x1="${R(cxL-ex*.45)}" y1="${R(y)}" x2="0" y2="${R(y)}" stroke="${extc}" stroke-width="${R(dl*.7)}"/>`+tk(cxL,y); });
+  for(let i=0;i<ys.length-1;i++){ const seg=ys[i+1]-ys[i]; if(seg<0.8) continue;
+    const my=(ys[i]+ys[i+1])/2; h+=`<text x="${R(cxL-fs*.24)}" y="${R(my)}" text-anchor="middle" font-size="${R(fs*.6)}" fill="#7a869c" transform="rotate(-90 ${R(cxL-fs*.24)} ${R(my)})">${fmt1(seg)}</text>`; }
+  const dxL=-off2;
+  h+=`<line x1="${R(dxL)}" y1="0" x2="${R(dxL)}" y2="${R(bd)}" stroke="${dim}" stroke-width="${dl}"/>`+tk(dxL,0)+tk(dxL,bd)
+   +`<text x="${R(dxL-fs*.36)}" y="${R(bd/2)}" text-anchor="middle" font-size="${R(fs*.82)}" fill="#5a6b86" font-weight="600" transform="rotate(-90 ${R(dxL-fs*.36)} ${R(bd/2)})">${fmt1(bd)} m</text>`;
   return h;
 }
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5609,7 +5621,9 @@ function planRenderSVG(){
   if(!pl.rooms){ svg.innerHTML=''; return; }
   const L=_planLinesSVG(), R=L.R, fs=L.fs;
   const bw=P.bw, bd=P.bd, m=2.9;
-  svg.setAttribute('viewBox',`${R(L.vb.x)} ${R(L.vb.y)} ${R(L.vb.w)} ${R(L.vb.h+1.9)}`);
+  // 상단·좌측 치수선(실별 체인+전체)이 들어오도록 뷰박스를 좌·상으로 확장
+  const dimPad=fs*3.8;
+  svg.setAttribute('viewBox',`${R(L.vb.x-dimPad)} ${R(L.vb.y-dimPad)} ${R(L.vb.w+dimPad)} ${R(L.vb.h+dimPad)}`);
   const pathD=L.buildD;
   const wallW=R(Math.max(.18,fs*.3)), partW=R(Math.max(.07,fs*.11));   // 외벽/칸막이 두께
   let h=`<defs><clipPath id="plclip"><path d="${pathD}"/></clipPath>
@@ -5627,7 +5641,8 @@ function planRenderSVG(){
     const col=PLAN_CAT_COLOR[r.cat]||'#bbb';
     const drag=(r.cat==='core'&&!isPark)?' pl-core-drag':'';
     const cls='pl-room'+drag+(i===P.selRoom?' sel':'');
-    const op=r.open?.42:(r.cat==='void'?.5:(r.cat==='park'?.6:ext?.34:.5));
+    // 평면도는 조닝보다 연하게(도면 표기법 — 투명도 낮춤)
+    const op=r.open?.24:(r.cat==='void'?.3:(r.cat==='park'?.4:ext?.22:.3));
     h+=`<rect class="${cls}" data-ri="${i}" x="${R(r.x)}" y="${R(r.y)}" width="${R(r.w)}" height="${R(r.h)}" fill="${col}" fill-opacity="${op}" stroke="#5a6883" stroke-width="${partW}"${ext?` stroke-dasharray="${R(fs*.5)} ${R(fs*.35)}"`:''}/>`;
     if(ext&&r.w>fs*1.4&&r.h>fs*1.4)  // 외부공간 해치(데크·테라스 표현)
       h+=`<rect x="${R(r.x)}" y="${R(r.y)}" width="${R(r.w)}" height="${R(r.h)}" fill="url(#plhatch)" pointer-events="none"/>`;
